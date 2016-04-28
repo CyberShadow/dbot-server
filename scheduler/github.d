@@ -67,13 +67,15 @@ void handleBranch(SysTime time, string name, string commit, Action action)
 
 	class BranchTask : Task
 	{
-		override @property string key() { return "branch:%s".format(name); }
+		override @property string taskKey() { return "branch:%s".format(name); }
+
+		override @property string jobKey() { return "%s:branch:".format(name, commit); }
 
 		override Priority getPriority(string clientID)
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [MainlineCommit]=? AND [PRComponent] IS NULL").iterate(clientID, commit).selectValue!int() > 0)
+			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Key] LIKE ? AND [Status] IN ('success', 'failure', 'error')").iterate(clientID, commit).selectValue!int() > 0)
 				return Priority(Priority.Group.none); // already tested this commit
 			return Priority(Priority.Group.branch, time.stdTime);
 		}
@@ -116,15 +118,17 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 
 	class PullTask : Task
 	{
-		override @property string key() { return "pr:%s:%s:%d".format(org, repo, number); }
+		override @property string taskKey() { return "pr:%s:%s:%d".format(org, repo, number); }
+
+		override @property string jobKey() { return "%s:pr:%s:%s:%d:%s:%s".format(targetBranch, org, repo, number, commit, branchCommit); }
 
 		override Priority getPriority(string clientID)
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [MainlineCommit]=?").iterate(clientID, merges, branchCommit).selectValue!int() > 0)
+			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [Status] IN ('success', 'failure', 'error') AND [MainlineCommit]=?").iterate(clientID, merges, branchCommit).selectValue!int() > 0)
 				return Priority(Priority.Group.none); // already tested this PR version against the current branch
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=?"                       ).iterate(clientID, merges              ).selectValue!int() > 0)
+			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [Status] IN ('success', 'failure', 'error')"                       ).iterate(clientID, merges              ).selectValue!int() > 0)
 				return Priority(Priority.Group.idle, time.stdTime); // already tested this PR version against an older version of the target branch
 			return Priority(Priority.Group.newPR, time.stdTime);
 		}
@@ -138,12 +142,6 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 				branchCommit
 			];
 		}
-
-		override @property string mainlineBranch() { return targetBranch; }
-		override @property string mainlineCommit() { return branchCommit; }
-		override @property string prComponent() { return "%s/%s".format(org, repo); }
-		override @property int prNumber() { return number; }
-		override @property string merges() { return merges; }
 	}
 
 	handleTask(new PullTask, action);

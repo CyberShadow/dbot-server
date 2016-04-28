@@ -1,7 +1,7 @@
 module clients;
 
 import common;
-import scheduler;
+import scheduler.common;
 
 class Client
 {

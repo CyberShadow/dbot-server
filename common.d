@@ -86,6 +86,8 @@ shared static this()
 		atomic!createDatabase(dbFileName);
 
 	db = new SQLite(dbFileName);
+
+	query("PRAGMA case_sensitive_like = ON").exec();
 }
 
 SQLite.PreparedStatement query(string sql)

@@ -159,7 +159,16 @@ struct Priority
 
 class Task
 {
-	abstract @property string key();
+	/// The task key, used to uniquely identify a testable item such as a pull request or meta-repository branch.
+	/// E.g. one pull request is one task, even if it's updated / rebased, or the branch it's targeting is updated.
+	abstract @property string taskKey();
+
+	/// The job key, used to uniquely identify a concrete job for any given version of a task.
+	/// E.g. each time a pull request, or the branch it's targeting, is updated, should result in a different job key.
+	/// The job key is structured in a way that prefixed searches should find relevant jobs for a given topic
+	/// (e.g. all jobs belonging to a pull request, or to a specific pull request version, or to a pull request version
+	/// targeting a specific target branch version.
+	abstract @property string jobKey();
 
 	/// Return true if we should abort the given job due to the given action performed with this task.
 	/// E.g. if action is Action.create or Action.modify, does this task supersede that job?
@@ -172,21 +181,6 @@ class Task
 
 	/// Return what to pass on the client command line.
 	abstract string[] getClientCommandLine();
-
-	/// Return the value for the [MainlineBranch] column.
-	abstract @property string mainlineBranch();
-
-	/// Return the value for the [MainlineCommit] column.
-	abstract @property string mainlineCommit();
-
-	/// Return the value for the [PRComponent] column.
-	abstract @property string prComponent();
-
-	/// Return the value for the [PRNumber] column.
-	abstract @property int prNumber();
-
-	/// Return the value for the [Merges] column.
-	abstract @property string merges();
 }
 
 /*
@@ -230,16 +224,16 @@ void handleTask(Task task, Action action)
 {
 	if (action == Action.remove)
 	{
-		assert(task.key in tasks, "Deleting non-existing task %s".format(task.key));
-		tasks.remove(task.key);
+		assert(task.taskKey in tasks, "Deleting non-existing task %s".format(task.taskKey));
+		tasks.remove(task.taskKey);
 	}
 	else
 	{
 		if (action == Action.modify)
-			assert(task.key in tasks, "Modifying non-existing task %s".format(task.key));
+			assert(task.taskKey in tasks, "Modifying non-existing task %s".format(task.taskKey));
 		else
-			assert(task.key !in tasks, "Creating already-existing task %s".format(task.key));
-		tasks[task.key] = task;
+			assert(task.taskKey !in tasks, "Creating already-existing task %s".format(task.taskKey));
+		tasks[task.taskKey] = task;
 	}
 	foreach (client; clients)
 		if (client.job && task.obsoletes(client.job, action))
