@@ -52,7 +52,9 @@ class SshClient : Client
 	override void startJob()
 	{
 		// TODO
-		jobComplete(job);
+		JobResult result;
+		jobComplete(job, result);
+		job = null;
 		run();
 	}
 }

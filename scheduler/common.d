@@ -3,19 +3,24 @@ module scheduler.common;
 import std.algorithm;
 import std.array;
 import std.conv;
-import std.exception;
 import std.datetime;
+import std.exception;
 import std.json;
-import std.range.interfaces;
+import std.path;
+import std.range;
+import std.stdio;
 import std.string;
 
+import ae.utils.json;
 import ae.utils.meta : enumLength;
+import ae.utils.text : arrayFromHex, toHex;
 import ae.utils.time.common;
 import ae.utils.time.parse;
+import ae.sys.file;
 
+import api;
 import clients : clients, prodClients;
 import common;
-import api;
 
 /*
   Goals:
@@ -55,21 +60,6 @@ import api;
      - logic will be less general
 */
 
-/// One job per client
-struct Job
-{
-	long id;
-
-	/// Contains:
-	/// - information that's passed on the client's command line
-	/// - information needed by scheduler to mark the task as completed
-	///   and make relevant information available
-	/// - information needed to know whether this job should be canceled?
-	///   (we can also store pointers to this job)
-
-	Task task;
-}
-
 struct LogMessage
 {
 	enum Type
@@ -83,40 +73,174 @@ struct LogMessage
 	string text;
 }
 
+/// A job is one client's task instance, and corresponds to one row in the [Jobs] table
+// TODO: Maybe this should be a class
+struct Job
+{
+	/// The job ID, as the [Jobs].[ID] database field
+	long id;
+
+	/// Contains:
+	/// - information that's passed on the client's command line
+	/// - information needed by scheduler to mark the task as completed
+	///   and make relevant information available
+	/// - information needed to know whether this job should be canceled?
+	///   (we can also store pointers to this job)
+
+	const Task task;
+
+	File logSink;
+
+	this(long id, Task task)
+	{
+		this.id = id;
+		this.task = task;
+	}
+}
+
+/// Represents all information needed to create or rerun a job
+struct Spec
+{
+	/// The name of the meta-repository branch.
+	string branchName;
+
+	/// The commit hash on that branch.
+	string branchCommit;
+
+	/// Represents one ref to be merged into a tested source code snapshot.
+	struct Merge
+	{
+		/// The name of the repository where the merge will be performed
+		string repository;
+
+		/// The remote name or URL to fetch from. Usually just "origin"
+		string remote;
+
+		/// The full remote name of the ref to fetch. Usually starts with "refs/"
+		string remoteRef;
+
+		/// The exact commit to merge.
+		/// The ref will only be used to obtain the commit.
+		/// We merge the commit to avoid race conditions.
+		string commit;
+
+		int opCmp(ref const Merge o) const
+		{
+			int result = cmp(repository, o.repository);
+			if (!result)
+				result = cmp(remoteRef, o.remoteRef);
+			if (!result)
+				result = cmp(commit, o.commit);
+			return result;
+		}
+	}
+
+	/// Any merges to be laid on top.
+	Merge[] merges;
+
+	// @property string jobKey()
+	// {
+	// 	// TODO
+
+	// 	//override @property string jobKey() { return "%s:branch:%s".format(name, commit); }
+	// 	//override @property string jobKey() { return "%s:pr:%s:%s:%d:%s:%s".format(targetBranch, org, repo, number, commit, branchCommit); }
+
+	// 	return "%s:%-(%s%):%-(%s%):%-(%s%):%-(%s%):"
+
+	// 	assert(false);
+	// }
+
+	@property string hash() const
+	{
+		// XOR all commit hashes.
+		// Bonus: order doesn't matter.
+		// Nothing else matters.
+
+		ubyte[20] finalDigest;
+		foreach (hash; chain(branchCommit.only, merges.map!(m => m.commit)))
+		{
+			ubyte[20] hashDigest;
+			arrayFromHex(hash, hashDigest);
+			finalDigest[] ^= hashDigest[];
+		}
+		return finalDigest.toHex();
+	}
+
+	@property string[] commandLine() const
+	{
+		string[] result;
+		foreach (merge; merges)
+			result ~= [
+				"--fetch", "%s|%s|%s".format(merge.repository, merge.remote, merge.remoteRef),
+				"--merge", "%s|%s".format(merge.repository, merge.commit),
+			];
+		result ~= [branchCommit];
+		return result;
+	}
+}
+
 struct JobResult
 {
-	LogMessage[] log;
 	JobStatus status; /// success/failure/error/obsoleted
 	string error; /// error message; null if no error
 	// TODO: coverage
 	// TODO: metrics
 }
 
+string jobDir(long id)
+{
+	return "stor/jobs/%d".format(id);
+}
+
 /// Return the next task to be done by a worker client,
 /// or null if there is no more work for this client.
 Job* getJob(string clientID)
 {
-	// TODO: Find a job
-	// TODO: Save to database that this job has been started
-	// TODO: Multiple job sources (pull scheduler)
+	auto task = (){
+		auto taskSources = taskSourceFactories.map!(f => f(clientID)).array();
 
-	auto job = new Job;
-	job.id = db.lastInsertRowID;
+		foreach_reverse (priorityGroup; Priority.Group.idle .. enumLength!(Priority.Group))
+		{
+			// Alternate between multiple task sources at same priority
+			static int[enumLength!(Priority.Group)][string] sourceCounters;
+			auto counter = sourceCounters[clientID][priorityGroup]++;
+			foreach (n; 0..taskSources.length)
+			{
+				auto tasks = taskSources[(n + counter) % $].getTasks(priorityGroup);
+				if (!tasks.empty)
+					return tasks.front;
+			}
+		}
+		return null;
+	}();
 
-	return null;
+	if (!task)
+		return null;
+
+	query("INSERT INTO [Jobs] ([StartTime], [Hash], [ClientID], [Status]) VALUES (?, ?, ?, ?)")
+		.exec(Clock.currTime.stdTime, task.spec.hash, clientID, JobStatus.started.text);
+
+	auto job = new Job(db.lastInsertRowID, task);
+	auto logFileName = jobDir(job.id).buildPath("log.json");
+	logFileName.ensurePathExists();
+	job.logSink = File(logFileName, "wb");
+	return job;
 }
 
 class TaskSource
 {
+	// TODO: Maybe this should return just one valid task, and its priority?
 	abstract InputRange!Task getTasks(Priority.Group priorityGroup);
 }
 
 TaskSource function(string clientID)[] taskSourceFactories;
 
 /// Called by a client to report a job's completion.
-void jobComplete(Job* job)
+void jobComplete(Job* job, JobResult result)
 {
-	// TODO: Save to database
+	job.logSink.close();
+	query("UPDATE [Jobs] SET [FinishTime]=?, [Status]=?, [Error]=?")
+		.exec(Clock.currTime.stdTime, result.status.text, result.error);
 }
 
 /*
@@ -157,6 +281,7 @@ struct Priority
 	long order;
 }
 
+/// Represents something testable - a branch, pull request, or old commit (for historical trend data).
 class Task
 {
 	/// The task key, used to uniquely identify a testable item such as a pull request or meta-repository branch.
@@ -167,8 +292,13 @@ class Task
 	/// E.g. each time a pull request, or the branch it's targeting, is updated, should result in a different job key.
 	/// The job key is structured in a way that prefixed searches should find relevant jobs for a given topic
 	/// (e.g. all jobs belonging to a pull request, or to a specific pull request version, or to a pull request version
-	/// targeting a specific target branch version.
+	/// targeting a specific target branch version).
+	/// Note that this job key does not identify a job uniquely - two pull requests that depend on one another
+	/// will have two different job keys, but will be tested once.
 	abstract @property string jobKey();
+
+	/// Return the job spec.
+	abstract @property Spec spec();
 
 	/// Return true if we should abort the given job due to the given action performed with this task.
 	/// E.g. if action is Action.create or Action.modify, does this task supersede that job?
@@ -180,7 +310,7 @@ class Task
 	abstract Priority getPriority(string clientID);
 
 	/// Return what to pass on the client command line.
-	abstract string[] getClientCommandLine();
+	//abstract string[] getClientCommandLine();
 }
 
 /*
@@ -239,4 +369,18 @@ void handleTask(Task task, Action action)
 		if (client.job && task.obsoletes(client.job, action))
 			client.abortJob();
 	prodClients();
+
+	if (action != Action.remove)
+	{
+		auto spec = task.spec;
+		spec.merges.sort();
+		query("INSERT OR IGNORE INTO [Tasks] ([Key], [Spec], [Hash]) VALUES (?, ?, ?)").exec(task.jobKey, spec.toJson(), spec.hash);
+	}
+}
+
+void initializeScheduler()
+{
+	assert(!clients.length, "Scheduler initialization should occur before client initialization");
+
+	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
 }

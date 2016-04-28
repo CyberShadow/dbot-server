@@ -69,27 +69,40 @@ void handleBranch(SysTime time, string name, string commit, Action action)
 	{
 		override @property string taskKey() { return "branch:%s".format(name); }
 
-		override @property string jobKey() { return "%s:branch:".format(name, commit); }
+		override @property string jobKey() { return "%s:branch:%s".format(name, commit); }
+
+		override @property Spec spec()
+		{
+			Spec spec;
+			spec.branchName = name;
+			spec.branchCommit = commit;
+			return spec;
+		}
 
 		override Priority getPriority(string clientID)
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Key] LIKE ? AND [Status] IN ('success', 'failure', 'error')").iterate(clientID, commit).selectValue!int() > 0)
+			// enum qStr = "SELECT COUNT(*) FROM [Tasks] " ~
+			// 	"JOIN [Jobs] ON [Tasks].[Hash]=[Jobs].[Hash] " ~
+			// 	"WHERE [Status] IN ('success', 'failure', 'error') AND [ClientID]=? AND [Key]=?";
+			// if (query().iterate(clientID, commit).selectValue!int() > 0)
+			// 	return Priority(Priority.Group.none); // already tested this commit
+			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Hash]=? AND [Status] IN ('success', 'failure', 'error')").iterate(clientID, spec.hash).selectValue!int() > 0)
 				return Priority(Priority.Group.none); // already tested this commit
 			return Priority(Priority.Group.branch, time.stdTime);
 		}
 
-		override string[] getClientCommandLine()
-		{
-			return [commit];
-		}
+		// override string[] getClientCommandLine()
+		// {
+		// 	return [commit];
+		// }
 
-		override @property string mainlineBranch() { return name; }
-		override @property string mainlineCommit() { return commit; }
-		override @property string prComponent() { return null; }
-		override @property int prNumber() { return 0; }
-		override @property string merges() { return null; }
+		// override @property string mainlineBranch() { return name; }
+		// override @property string mainlineCommit() { return commit; }
+		// override @property string prComponent() { return null; }
+		// override @property int prNumber() { return 0; }
+		// override @property string merges() { return null; }
 	}
 
 	handleTask(new BranchTask, action);
@@ -106,8 +119,19 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 	  - pull request SHA
 	  - pull request description (for parsing dependencies and such)
 	 */
+
+	Spec.Merge[] merges;
+
 	// TODO: Parse the description for dependencies
-	string merges = "%s:%s".format(repo, commit);
+	// For now, there is only one mergeable
+
+	Spec.Merge merge = {
+		repository : repo,
+		remote : "origin",
+		remoteRef : "refs/pull/%d/head".format(number),
+		commit : commit,
+	};
+	merges ~= merge;
 
 	if (targetBranch !in branches)
 	{
@@ -122,26 +146,42 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 
 		override @property string jobKey() { return "%s:pr:%s:%s:%d:%s:%s".format(targetBranch, org, repo, number, commit, branchCommit); }
 
+		override @property Spec spec()
+		{
+			Spec spec;
+			spec.branchName = targetBranch;
+			spec.branchCommit = branchCommit;
+			spec.merges = merges;
+			return spec;
+		}
+
 		override Priority getPriority(string clientID)
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [Status] IN ('success', 'failure', 'error') AND [MainlineCommit]=?").iterate(clientID, merges, branchCommit).selectValue!int() > 0)
+			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Hash]=? AND [Status] IN ('success', 'failure', 'error')").iterate(clientID, spec.hash).selectValue!int() > 0)
 				return Priority(Priority.Group.none); // already tested this PR version against the current branch
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [Status] IN ('success', 'failure', 'error')"                       ).iterate(clientID, merges              ).selectValue!int() > 0)
+			// if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [Status] IN ('success', 'failure', 'error')"                       ).iterate(clientID, merges              ).selectValue!int() > 0)
+			// 	return Priority(Priority.Group.idle, time.stdTime); // already tested this PR version against an older version of the target branch
+			enum qStr = "SELECT COUNT(*) FROM [Tasks] " ~
+				"JOIN [Jobs] ON [Tasks].[Hash]=[Jobs].[Hash] " ~
+				"WHERE [Status] IN ('success', 'failure', 'error') " ~
+				"AND [ClientID]=? AND [Key] LIKE ?";
+			auto keyPattern = "%s:pr:%s:%s:%d:%s:%%".format(targetBranch, org, repo, number, commit);
+			if (query(qStr).iterate(clientID, keyPattern).selectValue!int() > 0)
 				return Priority(Priority.Group.idle, time.stdTime); // already tested this PR version against an older version of the target branch
 			return Priority(Priority.Group.newPR, time.stdTime);
 		}
 
-		override string[] getClientCommandLine()
-		{
-			// TODO: dependencies
-			return [
-				"--fetch", "%s|origin|refs/pull/%d/head".format(repo, number),
-				"--merge", "%s|%s".format(repo, commit),
-				branchCommit
-			];
-		}
+		// override string[] getClientCommandLine()
+		// {
+		// 	// TODO: dependencies
+		// 	return [
+		// 		"--fetch", "%s|origin|".format(repo, number),
+		// 		"--merge", "%s|%s".format(repo, commit),
+		// 		branchCommit
+		// 	];
+		// }
 	}
 
 	handleTask(new PullTask, action);
@@ -185,11 +225,9 @@ void getPullRequests()
 	}
 }
 
-void initialize()
+void initializeGitHub()
 {
 	assert(!clients.length, "Scheduler initialization should occur before client initialization");
-
-	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
 
 	getBranches();
 	getPullRequests();
