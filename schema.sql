@@ -1,5 +1,5 @@
 CREATE TABLE [Jobs] (
-[ID] INTEGER PRIMARY KEY NOT NULL AUTOINCREMENT, -- Job ID
+[ID] INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, -- Job ID
 [StartTime] INTEGER NOT NULL,
 [FinishTime] INTEGER NOT NULL DEFAULT 0,
 [Hash] CHAR(40) NOT NULL, -- Unique hash for this job's parameters
@@ -10,7 +10,7 @@ CREATE TABLE [Jobs] (
 
 CREATE UNIQUE INDEX [JobsHash] ON [Jobs] (
 [ClientID],
-[Hash],
+[Hash]
 );
 
 CREATE TABLE [Tasks] (
