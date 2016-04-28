@@ -32,6 +32,7 @@ class Client
 
 	/// Abort the currently running job, if possible.
 	/// If aborted, client becomes idle. Prod if necessary.
+	/// The partial job result should still be reported via jobComplete.
 	void abortJob()
 	{
 		// TODO: accept a reason parameter

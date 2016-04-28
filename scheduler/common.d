@@ -1,9 +1,15 @@
+module scheduler.common;
+
+import std.algorithm;
+import std.array;
 import std.conv;
 import std.exception;
 import std.datetime;
 import std.json;
+import std.range.interfaces;
 import std.string;
 
+import ae.utils.meta : enumLength;
 import ae.utils.time.common;
 import ae.utils.time.parse;
 
@@ -52,6 +58,8 @@ import api;
 /// One job per client
 struct Job
 {
+	long id;
+
 	/// Contains:
 	/// - information that's passed on the client's command line
 	/// - information needed by scheduler to mark the task as completed
@@ -62,6 +70,28 @@ struct Job
 	Task task;
 }
 
+struct LogMessage
+{
+	enum Type
+	{
+		log,
+		stdout,
+		stderr,
+	}
+	Type type;
+	SysTime time;
+	string text;
+}
+
+struct JobResult
+{
+	LogMessage[] log;
+	JobStatus status; /// success/failure/error/obsoleted
+	string error; /// error message; null if no error
+	// TODO: coverage
+	// TODO: metrics
+}
+
 /// Return the next task to be done by a worker client,
 /// or null if there is no more work for this client.
 Job* getJob(string clientID)
@@ -69,8 +99,19 @@ Job* getJob(string clientID)
 	// TODO: Find a job
 	// TODO: Save to database that this job has been started
 	// TODO: Multiple job sources (pull scheduler)
+
+	auto job = new Job;
+	job.id = db.lastInsertRowID;
+
 	return null;
 }
+
+class TaskSource
+{
+	abstract InputRange!Task getTasks(Priority.Group priorityGroup);
+}
+
+TaskSource function(string clientID)[] taskSourceFactories;
 
 /// Called by a client to report a job's completion.
 void jobComplete(Job* job)
@@ -128,6 +169,24 @@ class Task
 	/// Return the priority (higher = more important) for the given client ID.
 	/// Return PriorityGroup.none to skip this task for this client.
 	abstract Priority getPriority(string clientID);
+
+	/// Return what to pass on the client command line.
+	abstract string[] getClientCommandLine();
+
+	/// Return the value for the [MainlineBranch] column.
+	abstract @property string mainlineBranch();
+
+	/// Return the value for the [MainlineCommit] column.
+	abstract @property string mainlineCommit();
+
+	/// Return the value for the [PRComponent] column.
+	abstract @property string prComponent();
+
+	/// Return the value for the [PRNumber] column.
+	abstract @property int prNumber();
+
+	/// Return the value for the [Merges] column.
+	abstract @property string merges();
 }
 
 /*
@@ -154,15 +213,19 @@ bool isObsoletedByDeletion(Task* oldTask)
 }
 */
 
+/// Live tasks by key.
 Task[string] tasks;
 
+/// How did the task's state change?
 enum Action
 {
-	create,
-	modify,
-	remove,
+	resume, /// It was there when we started
+	create, /// It was just created
+	modify, /// It already existed, and has been updated
+	remove, /// It was just deleted
 }
 
+/// Handle a task state change
 void handleTask(Task task, Action action)
 {
 	if (action == Action.remove)
@@ -172,7 +235,9 @@ void handleTask(Task task, Action action)
 	}
 	else
 	{
-		if (action == Action.create)
+		if (action == Action.modify)
+			assert(task.key in tasks, "Modifying non-existing task %s".format(task.key));
+		else
 			assert(task.key !in tasks, "Creating already-existing task %s".format(task.key));
 		tasks[task.key] = task;
 	}
@@ -181,117 +246,3 @@ void handleTask(Task task, Action action)
 			client.abortJob();
 	prodClients();
 }
-
-string[string] branches;
-
-/// Handle an updated meta-repository branch
-void handleBranch(SysTime time, string name, string commit, Action action)
-{
-	/*
-	  Needed information:
-	  - github organization
-	  - github repository
-	  - branch name
-	  - new commit
-	*/
-	branches[name] = commit;
-
-	class BranchTask : Task
-	{
-		override @property string key() { return "branch:%s".format(name); }
-
-		override Priority getPriority(string clientID)
-		{
-			// TODO: Cache in RAM?
-			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [MainlineCommit]=? AND [PRComponent] IS NULL").iterate(clientID, commit).selectValue!int() > 0)
-				return Priority(Priority.Group.none); // already tested this commit
-			return Priority(Priority.Group.branch, time.stdTime);
-		}
-	}
-
-	handleTask(new BranchTask, action);
-}
-
-/// Handle a new or updated GitHub pull
-void handlePull(SysTime time, string org, string repo, int number, string commit, string targetBranch, string description, Action action)
-{
-	/*
-	  Needed information:
-	  - github organization
-	  - github repository
-	  - pull request number
-	  - pull request SHA
-	  - pull request description (for parsing dependencies and such)
-	 */
-	// TODO: Parse the description
-	string merges = "%s:%s".format(repo, commit);
-
-	if (targetBranch !in branches)
-	{
-		log("Ignoring pull request %s:%s:%d against unknown branch %s".format(org, repo, number, targetBranch));
-		return;
-	}
-
-	class PullTask : Task
-	{
-		override @property string key() { return "pr:%s:%s:%d".format(org, repo, number); }
-
-		override Priority getPriority(string clientID)
-		{
-			// TODO: Cache in RAM?
-			// TODO: Indexes
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=? AND [MainlineCommit]=?").iterate(clientID, merges, branches[targetBranch]).selectValue!int() > 0)
-				return Priority(Priority.Group.none); // already tested this PR version against the current branch
-			if (query("SELECT COUNT(*) FROM [Jobs] WHERE [ClientID]=? AND [Merges]=?"                       ).iterate(clientID, merges                        ).selectValue!int() > 0)
-				return Priority(Priority.Group.idle, time.stdTime); // already tested this PR version against an older version of the target branch
-			return Priority(Priority.Group.newPR, time.stdTime);
-		}
-	}
-
-	handleTask(new PullTask, action);
-}
-
-/// Get the current state of the meta-repository branches from BitBucket.
-void getBranches()
-{
-	auto response = httpQuery("https://api.bitbucket.org/2.0/repositories/cybershadow/d/refs/branches?pagelen=100").parseJSON();
-	enforce("size" !in response.object, "Paged BitBucket object");
-
-	foreach (value; response.object["values"].array)
-	{
-		auto name = value.object["name"].str;
-		auto hash = value.object["target"].object["hash"].str;
-		auto date = value.object["target"].object["date"].str.parseTime!(TimeFormats.RFC3339)();
-		handleBranch(date, name, hash, Action.create);
-	}
-}
-
-/// Get the current state of pull requests from GitHub.
-void getPullRequests()
-{
-	JSONValue[] pulls;
-	foreach (repo; testedRepos)
-		pulls ~= httpQuery("https://api.github.com/repos/dlang/" ~ repo ~ "/pulls?per_page=100").parseJSON().array;
-
-	log("Verifying pulls");
-
-	foreach (pull; pulls)
-	{
-		auto sha = pull["head"]["sha"].str;
-		auto repo = pull["base"]["repo"]["name"].str;
-		int n = pull["number"].integer.to!int;
-		auto date = pull["updated_at"].str.parseTime!(TimeFormats.ISO8601)();
-	}
-}
-
-void initialize()
-{
-	assert(!clients.length, "Scheduler initialization should occur before client initialization");
-
-	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
-
-	getBranches();
-	getPullRequests();
-}
-
