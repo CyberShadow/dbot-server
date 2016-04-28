@@ -193,7 +193,7 @@ void getBranches()
 	log("Querying branches");
 
 	auto response = httpQuery("https://api.bitbucket.org/2.0/repositories/cybershadow/d/refs/branches?pagelen=100").parseJSON();
-	enforce("size" !in response.object, "Paged BitBucket object");
+	enforce(response.object["size"].integer < response.object["pagelen"].integer, "Paged BitBucket object"); // TODO
 
 	foreach (value; response.object["values"].array)
 	{
