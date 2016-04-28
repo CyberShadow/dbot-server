@@ -73,7 +73,7 @@ SQLite db;
 
 shared static this()
 {
-	auto dbFileName = "data/dbot.s3db";
+	auto dbFileName = "stor/dbot.s3db";
 
 	void createDatabase(string target)
 	{

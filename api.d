@@ -27,7 +27,7 @@ void httpQuery(string url, void delegate(string) handleData, void delegate(strin
 	request.resource = url;
 	addAuth(request);
 
-	auto cacheFileName = "cache/" ~ getDigestString!MD5(url).toLower();
+	auto cacheFileName = "stor/cache/" ~ getDigestString!MD5(url).toLower();
 
 	CacheEntry cacheEntry;
 	if (cacheFileName.exists)
