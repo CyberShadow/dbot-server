@@ -60,6 +60,7 @@ void httpQuery(string url, void delegate(string) handleData, void delegate(strin
 			{
 				log(" > Cache miss");
 				scope(failure) log(response.headers.text);
+				scope(failure) log(request.headers.text);
 				s = (cast(char[])response.getContent().contents).idup;
 				cacheEntry.etag = response.headers.get("ETag", null);
 				cacheEntry.lastModified = response.headers.get("Last-Modified", null);

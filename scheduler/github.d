@@ -190,6 +190,8 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 /// Get the current state of the meta-repository branches from BitBucket.
 void getBranches()
 {
+	log("Querying branches");
+
 	auto response = httpQuery("https://api.bitbucket.org/2.0/repositories/cybershadow/d/refs/branches?pagelen=100").parseJSON();
 	enforce("size" !in response.object, "Paged BitBucket object");
 
@@ -205,13 +207,15 @@ void getBranches()
 /// Get the current state of pull requests from GitHub.
 void getPullRequests()
 {
+	log("Querying pulls");
+
 	JSONValue[] pulls;
 	// TODO: Include dbot-client here too
 	auto org = "dlang";
 	foreach (repo; testedRepos)
 		pulls ~= httpQuery("https://api.github.com/repos/" ~ org ~ "/" ~ repo ~ "/pulls?per_page=100").parseJSON().array;
 
-	log("Verifying pulls");
+	log("Registering pulls");
 
 	foreach (pull; pulls)
 	{
@@ -231,4 +235,6 @@ void initializeGitHub()
 
 	getBranches();
 	getPullRequests();
+
+	log("GitHub: Initialized.");
 }
