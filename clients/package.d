@@ -134,6 +134,8 @@ protected:
 
 	final void reportResult(Job* job)
 	{
+		log("Job %d (%s) belonging to client %s complete with status %s (%s)"
+			.format(job.id, job.task.jobKey, this.id, result.status, result.error ? result.error : "no error"));
 		assert(job is this.job);
 		this.job = null;
 		jobComplete(job, result);
