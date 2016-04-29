@@ -13,7 +13,7 @@ import ae.utils.meta : enumLength;
 import ae.utils.time.common;
 import ae.utils.time.parse;
 
-import clients : clients, prodClients;
+import clients;
 import common;
 import api;
 
@@ -65,11 +65,11 @@ void handleBranch(SysTime time, string name, string commit, Action action)
 
 	class BranchTask : Task
 	{
-		override @property string taskKey() { return "branch:%s".format(name); }
+		override @property string taskKey() const { return "branch:%s".format(name); }
 
-		override @property string jobKey() { return "%s:branch:%s".format(name, commit); }
+		override @property string jobKey() const { return "%s:branch:%s".format(name, commit); }
 
-		override @property Spec spec()
+		override @property Spec spec() const
 		{
 			Spec spec;
 			spec.branchName = name;
@@ -77,7 +77,7 @@ void handleBranch(SysTime time, string name, string commit, Action action)
 			return spec;
 		}
 
-		override Priority getPriority(string clientID)
+		override Priority getPriority(string clientID) const
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
@@ -140,11 +140,11 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 
 	class PullTask : Task
 	{
-		override @property string taskKey() { return "pr:%s:%s:%d".format(org, repo, number); }
+		override @property string taskKey() const { return "pr:%s:%s:%d".format(org, repo, number); }
 
-		override @property string jobKey() { return "%s:pr:%s:%s:%d:%s:%s".format(targetBranch, org, repo, number, commit, branchCommit); }
+		override @property string jobKey() const { return "%s:pr:%s:%s:%d:%s:%s".format(targetBranch, org, repo, number, commit, branchCommit); }
 
-		override @property Spec spec()
+		override @property Spec spec() const
 		{
 			Spec spec;
 			spec.branchName = targetBranch;
@@ -153,7 +153,7 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 			return spec;
 		}
 
-		override Priority getPriority(string clientID)
+		override Priority getPriority(string clientID) const
 		{
 			// TODO: Cache in RAM?
 			// TODO: Indexes
@@ -181,7 +181,7 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 		// 	];
 		// }
 
-		string getComponentCommit(string organization, string repository)
+		override string getComponentCommit(string organization, string repository) const
 		{
 			if (isInMetaRepository(organization, repository))
 				foreach (merge; merges)
@@ -190,7 +190,7 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 			return super.getComponentCommit(organization, repository);
 		}
 
-		string getComponentRef(string organization, string repository)
+		override string getComponentRef(string organization, string repository) const
 		{
 			if (isInMetaRepository(organization, repository))
 				foreach (merge; merges)
@@ -253,7 +253,7 @@ void getPullRequests()
 
 void initializeGitHub()
 {
-	assert(!clients.length, "Scheduler initialization should occur before client initialization");
+	assert(!allClients.length, "Scheduler initialization should occur before client initialization");
 
 	getBranches();
 	getPullRequests();

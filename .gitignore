@@ -1,3 +1,5 @@
-/server
+/conf/
 /logs/
 /stor/
+
+/server

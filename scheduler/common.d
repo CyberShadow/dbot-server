@@ -14,12 +14,13 @@ import std.string;
 import ae.utils.json;
 import ae.utils.meta : enumLength;
 import ae.utils.text : arrayFromHex, toHex;
-import ae.utils.time.common;
-import ae.utils.time.parse;
+import ae.utils.time;
 import ae.sys.file;
 
+import dbot.protocol;
+
 import api;
-import clients : clients, prodClients;
+import clients;
 import common;
 
 /*
@@ -62,14 +63,8 @@ import common;
 
 struct LogMessage
 {
-	enum Type
-	{
-		log,
-		stdout,
-		stderr,
-	}
-	Type type;
-	SysTime time;
+	Message.Log.Type type;
+	StdTime time;
 	string text;
 }
 
@@ -89,6 +84,8 @@ struct Job
 
 	const Task task;
 
+	bool done = false; // Result has been reported
+	Message.Progress.Type progress;
 	File logSink;
 
 	this(long id, Task task)
@@ -235,9 +232,11 @@ class TaskSource
 
 TaskSource function(string clientID)[] taskSourceFactories;
 
-/// Called by a client to report a job's completion.
+/// Called by a client to report a job's completion, whether it suceeded or errored.
 void jobComplete(Job* job, JobResult result)
 {
+	assert(!job.done, "Duplicate job completion report");
+	job.done = true;
 	job.logSink.close();
 	query("UPDATE [Jobs] SET [FinishTime]=?, [Status]=?, [Error]=?")
 		.exec(Clock.currTime.stdTime, result.status.text, result.error);
@@ -289,7 +288,7 @@ class Task
 {
 	/// The task key, used to uniquely identify a testable item such as a pull request or meta-repository branch.
 	/// E.g. one pull request is one task, even if it's updated / rebased, or the branch it's targeting is updated.
-	abstract @property string taskKey();
+	abstract @property string taskKey() const;
 
 	/// The job key, used to uniquely identify a concrete job for any given version of a task.
 	/// E.g. each time a pull request, or the branch it's targeting, is updated, should result in a different job key.
@@ -298,31 +297,31 @@ class Task
 	/// targeting a specific target branch version).
 	/// Note that this job key does not identify a job uniquely - two pull requests that depend on one another
 	/// will have two different job keys, but will be tested once.
-	abstract @property string jobKey();
+	abstract @property string jobKey() const;
 
 	/// Return the job spec.
-	abstract @property Spec spec();
+	abstract @property Spec spec() const;
 
 	/// Return true if we should abort the given job due to the given action performed with this task.
 	/// E.g. if action is Action.create or Action.modify, does this task supersede that job?
 	/// Or if action is Action.remove, does that (the PR being closed etc.) make this job obsolete?
-	bool obsoletes(Job* job, Action action) { return false; }
+	bool obsoletes(Job* job, Action action) const { return false; }
 
 	/// Return the priority (higher = more important) for the given client ID.
 	/// Return PriorityGroup.none to skip this task for this client.
-	abstract Priority getPriority(string clientID);
+	abstract Priority getPriority(string clientID) const;
 
 	/// Return what to pass on the client command line.
 	//abstract string[] getClientCommandLine();
 
 	/// Get commit for component not in meta-repository.
-	string getComponentCommit(string organization, string repository)
+	string getComponentCommit(string organization, string repository) const
 	{
 		return branches["%s:%s:%s".format(organization, repository, "master")];
 	}
 
 	/// Get ref for component not in meta-repository.
-	string getComponentRef(string organization, string repository)
+	string getComponentRef(string organization, string repository) const
 	{
 		return "refs/heads/master";
 	}
@@ -380,7 +379,7 @@ void handleTask(Task task, Action action)
 			assert(task.taskKey !in tasks, "Creating already-existing task %s".format(task.taskKey));
 		tasks[task.taskKey] = task;
 	}
-	foreach (client; clients)
+	foreach (client; allClients)
 		if (client.job && task.obsoletes(client.job, action))
 			client.abortJob();
 	prodClients();
@@ -395,7 +394,7 @@ void handleTask(Task task, Action action)
 
 void initializeScheduler()
 {
-	assert(!clients.length, "Scheduler initialization should occur before client initialization");
+	assert(!allClients.length, "Scheduler initialization should occur before client initialization");
 
 	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
 }

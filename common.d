@@ -22,9 +22,19 @@ struct Config
 		struct SSH
 		{
 			string host;
-			string dir;
 		}
 		SSH ssh;
+
+		enum Platform
+		{
+			unknown,
+			windows,
+			linux64,
+			// ... add as needed ...
+		}
+		Platform platform;
+
+		string dir; // Working directory on the host
 	}
 	Client[string] clients; // key is client ID
 
@@ -36,7 +46,7 @@ immutable Config config;
 shared static this()
 {
 	config = cast(immutable)
-		loadIni!Config("dbot.ini");
+		loadIni!Config("conf/dbot.ini");
 }
 
 // ***************************************************************************
