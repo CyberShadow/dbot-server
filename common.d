@@ -22,6 +22,7 @@ struct Config
 		struct SSH
 		{
 			string host;
+			string dir;
 		}
 		SSH ssh;
 	}
@@ -50,8 +51,20 @@ void log(string s)
 
 // ***************************************************************************
 
+const clientOrganization = "CyberShadow";
+const clientRepository = "dbot-client";
+
 /// The repositories we're testing
-const testedRepos = ["dlang.org", "dmd", "druntime", "phobos", "tools"];
+immutable string[][string] testedRepos;
+shared static this() { testedRepos = [
+	"dlang" : ["dlang.org", "dmd", "druntime", "phobos", "tools"],
+	clientOrganization : [clientRepository],
+]; }
+
+bool isInMetaRepository(string org, string repo)
+{
+	return org == "dlang";
+}
 
 //const mainBranches = ["master", "stable"];
 

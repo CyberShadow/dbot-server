@@ -243,6 +243,9 @@ void jobComplete(Job* job, JobResult result)
 		.exec(Clock.currTime.stdTime, result.status.text, result.error);
 }
 
+/// Current commits of meta-repository and individual repository branches.
+string[string] branches;
+
 /*
 /// One task for multiple clients
 struct Task
@@ -311,6 +314,18 @@ class Task
 
 	/// Return what to pass on the client command line.
 	//abstract string[] getClientCommandLine();
+
+	/// Get commit for component not in meta-repository.
+	string getComponentCommit(string organization, string repository)
+	{
+		return branches["%s:%s:%s".format(organization, repository, "master")];
+	}
+
+	/// Get ref for component not in meta-repository.
+	string getComponentRef(string organization, string repository)
+	{
+		return "refs/heads/master";
+	}
 }
 
 /*

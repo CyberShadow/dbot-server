@@ -51,8 +51,6 @@ static this()
 	taskSourceFactories ~= clientID => new StaticTaskSource(clientID, tasks.values);
 }
 
-string[string] branches;
-
 /// Handle a meta-repository branch state change
 void handleBranch(SysTime time, string name, string commit, Action action)
 {
@@ -182,6 +180,24 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 		// 		branchCommit
 		// 	];
 		// }
+
+		string getComponentCommit(string organization, string repository)
+		{
+			if (isInMetaRepository(organization, repository))
+				foreach (merge; merges)
+					if (repository == merge.repository)
+						return merge.commit;
+			return super.getComponentCommit(organization, repository);
+		}
+
+		string getComponentRef(string organization, string repository)
+		{
+			if (isInMetaRepository(organization, repository))
+				foreach (merge; merges)
+					if (repository == merge.repository)
+						return merge.remoteRef;
+			return super.getComponentRef(organization, repository);
+		}
 	}
 
 	handleTask(new PullTask, action);
@@ -202,6 +218,11 @@ void getBranches()
 		auto date = value.object["target"].object["date"].str.parseTime!(TimeFormats.RFC3339)();
 		handleBranch(date, name, hash, Action.resume);
 	}
+
+	foreach (org, repos; testedRepos)
+		foreach (repo; repos)
+			foreach (branch; httpQuery("https://api.github.com/repos/" ~ org ~ "/" ~ repo ~ "/branches?per_page=100").parseJSON().array)
+				branches["%s:%s:%s".format(org, repo, branch.object["name"].str)] = branch.object["commit"].object["sha"].str;
 }
 
 /// Get the current state of pull requests from GitHub.
@@ -210,16 +231,17 @@ void getPullRequests()
 	log("Querying pulls");
 
 	JSONValue[] pulls;
-	// TODO: Include dbot-client here too
-	auto org = "dlang";
-	foreach (repo; testedRepos)
-		pulls ~= httpQuery("https://api.github.com/repos/" ~ org ~ "/" ~ repo ~ "/pulls?per_page=100").parseJSON().array;
+
+	foreach (org, repos; testedRepos)
+		foreach (repo; repos)
+			pulls ~= httpQuery("https://api.github.com/repos/" ~ org ~ "/" ~ repo ~ "/pulls?per_page=100").parseJSON().array;
 
 	log("Registering pulls");
 
 	foreach (pull; pulls)
 	{
 		auto sha = pull["head"]["sha"].str;
+		auto org = pull["base"]["user"]["login"].str;
 		auto repo = pull["base"]["repo"]["name"].str;
 		int n = pull["number"].integer.to!int;
 		auto date = pull["updated_at"].str.parseTime!(TimeFormats.ISO8601)();

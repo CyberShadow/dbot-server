@@ -1,44 +1,33 @@
 #!/bin/bash
 
 # Arguments:
-# 1 - Directory to do our business in
-# 2 - DMD download URL (to build the client)
-# 3 - Path to rdmd.exe
-# 4 - dbot-client source shapshot zip file download URL
+# 1  - Directory to do our business in
+# 2  - DMD download URL (to build the client)
+# 3  - Path to rdmd.exe
+# 4  - dbot-client commit
+# 5  - dbot-client ref containing this commit
+# 6+ - dbot-client arguments
 
 _() {
 set -euo pipefail
 
-get_zip() {
-	URL="$1"
-	ZIP="$(basename "$URL")"
-	DIR="${2:-${ZIP%.*}}"
-	if [[ ! -f "$ZIP" ]]
-	then
-		rm -f "$ZIP".tmp
-		wget -O "$ZIP".tmp "$URL"
-		mv "$ZIP".tmp "$ZIP"
-	fi
-
-	if [[ ! -d "$DIR" ]]
-	then
-		rm -rf "$DIR".tmp
-		mkdir "$DIR".tmp
-		unzip "$ZIP" -d "$DIR".tmp
-		mv "$DIR".tmp "$DIR"
-	fi
-}
-
 DIR="$1"
 DMD_URL="$2"
 RDMD_PATH="$3"
-CLIENT_URL="$4"
-shift 4
+CLIENT_COMMIT="$4"
+CLIENT_REF="$5"
+shift 5
 
 mkdir -p "$DIR"
 cd "$DIR"
 
-get_zip "$DMD_URL"
+ZIP="$(basename "$DMD_URL")"
+if [[ ! -f "$ZIP" ]]
+then
+	rm -f "$ZIP".tmp
+	wget -O "$ZIP".tmp "$DMD_URL"
+	mv "$ZIP".tmp "$ZIP"
+fi
 
 DMD_DIR="${ZIP%.*}"
 if [[ ! -d "$DMD_DIR" ]]
@@ -49,24 +38,24 @@ then
 	mv "$DMD_DIR".tmp "$DMD_DIR"
 fi
 
-ZIP="$(basename "$CLIENT_URL")"
-if [[ ! -f "$ZIP" ]]
-then
-	rm -f "$ZIP".tmp
-	wget -O "$ZIP".tmp "$CLIENT_URL"
-	mv "$ZIP".tmp "$ZIP"
-fi
-
-CLIENT_DIR="${ZIP%.*}"
+CLIENT_DIR=dbot-client-"$CLIENT_COMMIT"
 if [[ ! -d "$CLIENT_DIR" ]]
 then
 	rm -rf "$CLIENT_DIR".tmp
-	mkdir "$CLIENT_DIR".tmp
-	unzip "$ZIP" -d "$CLIENT_DIR".tmp
+	git clone https://github.com/CyberShadow/dbot-client "$CLIENT_DIR".tmp
+	(
+		cd "$CLIENT_DIR".tmp
+		# TODO: Test merge with master, not actual ref
+		git fetch origin "+$CLIENT_REF:"
+		git checkout "$CLIENT_COMMIT"
+		git submodule update --init
+	)
 	mv "$CLIENT_DIR".tmp "$CLIENT_DIR"
 fi
 
-"$RDMD_PATH" "$CLIENT_DIR"
+RDMD_PATH=$(realpath "$RDMD_PATH")
+cd "$CLIENT_DIR"
+"$RDMD_PATH" client.d "$@"
 
 }
 
