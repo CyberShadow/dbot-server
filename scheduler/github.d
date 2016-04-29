@@ -251,16 +251,20 @@ void getPullRequests()
 
 	log("Registering pulls");
 
-	foreach (pull; pulls)
 	{
-		auto sha = pull["head"]["sha"].str;
-		auto org = pull["base"]["user"]["login"].str;
-		auto repo = pull["base"]["repo"]["name"].str;
-		int n = pull["number"].integer.to!int;
-		auto date = pull["updated_at"].str.parseTime!(TimeFormats.ISO8601)();
-		auto target = pull["base"]["ref"].str;
-		auto description = null; // TODO (requires separate request)
-		handlePull(date, org, repo, n, sha, target, null, Action.resume);
+		mixin(DB_TRANSACTION);
+
+		foreach (pull; pulls)
+		{
+			auto sha = pull["head"]["sha"].str;
+			auto org = pull["base"]["user"]["login"].str;
+			auto repo = pull["base"]["repo"]["name"].str;
+			int n = pull["number"].integer.to!int;
+			auto date = pull["updated_at"].str.parseTime!(TimeFormats.ISO8601)();
+			auto target = pull["base"]["ref"].str;
+			auto description = null; // TODO (requires separate request)
+			handlePull(date, org, repo, n, sha, target, null, Action.resume);
+		}
 	}
 }
 

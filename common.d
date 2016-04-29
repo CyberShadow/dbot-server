@@ -90,6 +90,8 @@ enum JobStatus
 
 // ***************************************************************************
 
+// TODO: This is shared code with DFeed and others. Belongs in its own ae module
+
 import ae.sys.sqlite3;
 
 SQLite db;
@@ -127,3 +129,11 @@ T selectValue(T, Iter)(Iter iter)
 		return val;
 	throw new Exception("No results for query");
 }
+
+int transactionDepth;
+
+enum DB_TRANSACTION = q{
+	if (transactionDepth++ == 0) query("BEGIN TRANSACTION").exec();
+	scope(failure) if (--transactionDepth == 0) query("ROLLBACK TRANSACTION").exec();
+	scope(success) if (--transactionDepth == 0) query("COMMIT TRANSACTION").exec();
+};
