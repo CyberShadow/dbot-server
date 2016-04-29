@@ -38,6 +38,9 @@ void httpQuery(string url, void delegate(string) handleData, void delegate(strin
 			request.headers["If-None-Match"] = cacheEntry.etag;
 		if (cacheEntry.lastModified)
 			request.headers["If-Modified-Since"] = cacheEntry.lastModified;
+
+		debug (offline)
+			return handleData(cacheEntry.data);
 	}
 
 	log("Getting URL " ~ url);
