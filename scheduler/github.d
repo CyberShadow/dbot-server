@@ -19,6 +19,8 @@ import api;
 
 import scheduler.common;
 
+debug(scheduler) import std.stdio : stderr;
+
 /// Sort a predefined array of tasks
 class StaticTaskSource : TaskSource
 {
@@ -38,10 +40,21 @@ class StaticTaskSource : TaskSource
 			groupIndex.sort!((a, b) => priorities[a].order > priorities[b].order);
 			taskGroups[group] = groupIndex.map!(i => tasks[i]).array();
 		}
+		debug (scheduler)
+		{
+			stderr.writefln("Priorities for client %s:", clientID);
+			foreach (Priority.Group group, groupTasks; taskGroups)
+			{
+				stderr.writefln("  Priority group %s:", group);
+				foreach (task; groupTasks)
+					stderr.writefln("    %s", task.jobKey);
+			}
+		}
 	}
 
 	override InputRange!Task getTasks(Priority.Group priorityGroup)
 	{
+		debug(scheduler) stderr.writefln("getTasks(%s) => %s tasks", priorityGroup, taskGroups[priorityGroup].length);
 		return inputRangeObject(taskGroups[priorityGroup]);
 	}
 }

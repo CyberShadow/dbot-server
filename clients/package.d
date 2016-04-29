@@ -66,7 +66,7 @@ protected:
 				zipPlatform = "linux";
 				break;
 			case Config.Client.Platform.unknown:
-				assert(false);
+				assert(false, "Unspecified client platform");
 		}
 		return "http://downloads.dlang.org/releases/2.x/%s/dmd.%s.%s.zip".format(dmdVer, dmdVer, zipPlatform);
 	}
@@ -81,7 +81,7 @@ protected:
 			case Config.Client.Platform.linux64:
 				return "linux/bin64";
 			case Config.Client.Platform.unknown:
-				assert(false);
+				assert(false, "Unspecified client platform");
 		}
 	}
 
@@ -116,19 +116,28 @@ protected:
 				{
 					result.status = JobStatus.failure;
 					result.error = message.log.text;
-					jobComplete(job, result);
+					reportResult(job);
 				}
 				break;
 			}
 			case Message.Type.progress:
 				job.progress = message.progress.type;
+				log("Client %s / job %d progress: %s".format(this.id, job.id, message.progress.type));
 				if (!job.done && job.progress == Message.Progress.Type.done)
 				{
 					result.status = JobStatus.success;
-					jobComplete(job, result);
+					reportResult(job);
 				}
 				break;
 		}
+	}
+
+	final void reportResult(Job* job)
+	{
+		assert(job is this.job);
+		this.job = null;
+		jobComplete(job, result);
+		run();
 	}
 }
 
@@ -143,6 +152,7 @@ void startClients()
 		{
 			case Config.Client.Type.ssh:
 				client = new SshClient(id, clientConfig);
+				break;
 		}
 		allClients[id] = client;
 		client.run();

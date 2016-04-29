@@ -30,7 +30,8 @@ class SshClient : Client
 		File fStdOut, fStdErr;
 		fStdOut.fdopen(pStdOut[0].handle);
 		fStdErr.fdopen(pStdErr[0].handle);
-		auto pid = spawnProcess(args, stdin, fStdOut, fStdErr);
+		auto fStdIn = File("data/client-bootstrap.sh", "rb");
+		auto pid = spawnProcess(args, fStdIn, fStdOut, fStdErr);
 
 		// just in case these callbacks outlive the job
 		auto job = this.job;
@@ -55,7 +56,8 @@ class SshClient : Client
 				(Data data)
 				{
 					auto str = cast(string)data.toHeap();
-					if (!str.skipOver("dbot-client: "))
+					debug scope(failure) log("Error with line: " ~ str);
+					if (str.skipOver("dbot-client: "))
 						handleMessage(job, jsonParse!Message(str));
 					else
 					{
@@ -73,10 +75,9 @@ class SshClient : Client
 					{
 						if (!job.done)
 						{
-							JobResult result;
-							result.status = JobStatus.error;
-							result.error = "Unexpected disconnect (" ~ reason ~ ")";
-							jobComplete(job, result);
+							this.result.status = JobStatus.error;
+							this.result.error = "Unexpected disconnect (" ~ reason ~ ")";
+							reportResult(job);
 						}
 					};
 		}

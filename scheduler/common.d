@@ -200,6 +200,8 @@ Job* getJob(string clientID)
 		{
 			// Alternate between multiple task sources at same priority
 			static int[enumLength!(Priority.Group)][string] sourceCounters;
+			if (clientID !in sourceCounters)
+				sourceCounters[clientID] = typeof(sourceCounters[clientID]).init;
 			auto counter = sourceCounters[clientID][priorityGroup]++;
 			foreach (n; 0..taskSources.length)
 			{
@@ -212,12 +214,17 @@ Job* getJob(string clientID)
 	}();
 
 	if (!task)
+	{
+		log("No task found for client " ~ clientID);
 		return null;
+	}
 
 	query("INSERT INTO [Jobs] ([StartTime], [Hash], [ClientID], [Status]) VALUES (?, ?, ?, ?)")
 		.exec(Clock.currTime.stdTime, task.spec.hash, clientID, JobStatus.started.text);
 
 	auto job = new Job(db.lastInsertRowID, task);
+	log("Assigning job %d (%s) for client %s".format(job.id, task.jobKey, clientID));
+
 	auto logFileName = jobDir(job.id).buildPath("log.json");
 	logFileName.ensurePathExists();
 	job.logSink = File(logFileName, "wb");
@@ -272,10 +279,10 @@ struct Priority
 	/// Multiple sources from the same group get interleaved.
 	enum Group
 	{
-		branch,
-		newPR,
-		idle,
 		none, /// don't test at all
+		idle,
+		newPR,
+		branch,
 	}
 	Group group;
 

@@ -8,7 +8,7 @@ CREATE TABLE [Jobs] (
 [Error] TEXT NULL
 );
 
-CREATE UNIQUE INDEX [JobsHash] ON [Jobs] (
+CREATE INDEX [JobsHash] ON [Jobs] (
 [ClientID],
 [Hash]
 );
