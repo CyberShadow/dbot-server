@@ -1,0 +1,53 @@
+body {
+	font-family: sans-serif;
+	max-width: 50em;
+	margin: 2em auto;
+}
+
+body > table > tbody > tr > td {
+	padding: 0.5em 1em 0 0;
+	vertical-align: top;
+}
+
+body > table > tbody > tr > td:first-child {
+	font-weight: bold;
+	width: 1px;
+	white-space: pre;
+}
+
+pre {
+	margin: 0;
+}
+
+table {
+	width: 100%;
+}
+
+table.changes > tbody > tr > td {
+	white-space: pre;
+}
+
+table.changes > tbody > tr > td:first-child {
+	font-family: monospace;
+	width: 1px;
+	padding-right: 1em;
+}
+
+.additions {
+	background-color: green;
+}
+.deletions {
+	background-color: #B00;
+}
+.additions, .deletions {
+	display: inline-block;
+	height: 1em;
+	vertical-align: middle;
+}
+
+.dirlist {
+	font-family: monospace;
+	font-size: 1.1em;
+	list-style: none;
+	white-space: pre;
+}
