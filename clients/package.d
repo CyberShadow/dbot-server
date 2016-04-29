@@ -53,22 +53,24 @@ protected:
 	/// DMD version used to build the client
 	static const dmdVer = "2.071.0";
 
-	/// Return download URL for the DMD zip for this platform
-	static string dmdURL(Config.Client.Platform platform)
+	/// Return DMD zip file name suffix for this platform
+	static string zipSuffix(Config.Client.Platform platform)
 	{
-		string zipPlatform;
 		final switch (platform)
 		{
 			case Config.Client.Platform.windows:
-				zipPlatform = "windows";
-				break;
+				return "windows";
 			case Config.Client.Platform.linux64:
-				zipPlatform = "linux";
-				break;
+				return "linux";
 			case Config.Client.Platform.unknown:
 				assert(false, "Unspecified client platform");
 		}
-		return "http://downloads.dlang.org/releases/2.x/%s/dmd.%s.%s.zip".format(dmdVer, dmdVer, zipPlatform);
+	}
+
+	/// Return download URL for the DMD zip for this platform
+	static string dmdURL(Config.Client.Platform platform)
+	{
+		return "http://downloads.dlang.org/releases/2.x/%s/dmd.%s.%s.zip".format(dmdVer, dmdVer, zipSuffix(platform));
 	}
 
 	/// Return path for the bin directory in the DMD zip for this platform
@@ -90,9 +92,12 @@ protected:
 		return [
 			clientConfig.dir,
 			dmdURL(clientConfig.platform),
-			"dmd.%s/%s/rdmd".format(dmdVer, binPath(clientConfig.platform)),
+			"dmd.%s.%s/dmd2/%s/rdmd".format(dmdVer, zipSuffix(clientConfig.platform), binPath(clientConfig.platform)),
 			job.task.getComponentCommit(clientOrganization, clientRepository),
 			job.task.getComponentRef(clientOrganization, clientRepository),
+
+			"--id",
+			this.id,
 		];
 	}
 
