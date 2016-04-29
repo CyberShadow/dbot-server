@@ -120,7 +120,8 @@ protected:
 				if (!job.done && message.log.type == Message.Log.Type.error)
 				{
 					result.status = JobStatus.failure;
-					result.error = message.log.text;
+					if (message.log.text.length)
+						result.error = message.log.text.splitLines()[0];
 					reportResult(job);
 				}
 				break;
