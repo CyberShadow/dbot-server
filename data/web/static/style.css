@@ -13,7 +13,7 @@ table {
 }
 
 td {
-    text-align: center;
+	text-align: center;
 }
 
 table.changes > tbody > tr > td {
@@ -57,4 +57,3 @@ body > table.diff > tbody > tr > td:first-child {
 	width: 1px;
 	white-space: pre;
 }
-
