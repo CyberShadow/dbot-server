@@ -96,6 +96,7 @@ void httpQuery(string url, void delegate(string) handleData, void delegate(strin
 	httpRequest(request, &resultHandler);
 }
 
+// TODO: Get rid of this wrapper
 string httpQuery(string url)
 {
 	string result;
@@ -115,6 +116,8 @@ string httpQuery(string url)
 	return result;
 }
 
+// TODO: should be async
+/*
 string httpPost(string url, string jsonData)
 {
 	auto request = new HttpRequest;
@@ -140,6 +143,7 @@ string httpPost(string url, string jsonData)
 	socketManager.loop();
 	return result;
 }
+*/
 
 void addAuth(HttpRequest request)
 {
