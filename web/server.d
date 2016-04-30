@@ -186,6 +186,7 @@ void showWorker(string clientID)
 		`<tr><th>ID</th><td>`, client.id, `</td></tr>`
 		`<tr><th>Driver</th><td>`, client.clientConfig.type.text, `</td></tr>`
 		`</tr>`
+		`</table>`
 		`<h3>Jobs</h3>`
 	);
 
