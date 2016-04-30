@@ -247,7 +247,7 @@ static this()
 			auto parts = key.split(":");
 			if (parts.length == 7 && parts[1] == "pr")
 			{
-				result.name = "%s/#%s".format(parts[3], parts[4]);
+				result.name = "%s#%s".format(parts[3], parts[4]);
 				result.description = "%s/%s pull request #%s".format(parts[2], parts[3], parts[4]);
 				result.htmlDetails ~= tuple("Target branch", parts[0]);
 				result.htmlDetails ~= tuple("Target meta-commit", parts[6]);

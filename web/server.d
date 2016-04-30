@@ -39,7 +39,7 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 {
 	auto response = new HttpResponseEx();
 	auto status = HttpStatusCode.OK;
-	string title;
+	string title = null, bodyClass = "page";
 	html.clear();
 
 	try
@@ -69,10 +69,29 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 				break;
 			case "job":
 			{
-				enforce!NotFoundException(path.length == 2, "Bad path");
+				enforce!NotFoundException(path.length >= 2, "Bad path");
 				JobID id = path[1].to!JobID();
-				title = "Job " ~ text(id);
-				showJob(id);
+				if (path.length == 2)
+				{
+					title = "Job " ~ text(id);
+					showJob(id);
+				}
+				else
+					switch (path[2])
+					{
+						case "log.html":
+							enforce!NotFoundException(path.length == 3, "Bad path");
+							title = "Log for job " ~ text(id);
+							bodyClass = "bare";
+							showLog(id);
+							break;
+						case "log.txt":
+							enforce!NotFoundException(path.length == 3, "Bad path");
+							showTextLog(id);
+							return response.serveText(cast(string) html.get());
+						default:
+							throw new NotFoundException("Unknown resource");
+					}
 				break;
 			}
 			case "tasks":
@@ -175,6 +194,7 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 
 	auto vars = [
 		"title" : title,
+		"class" : bodyClass,
 		"content" : cast(string) html.get(),
 	];
 
@@ -199,7 +219,7 @@ void showIndex()
 	);
 
 	html.put(
-		`<div style="float:right"><a href="/jobs">Browse all jobs</a></div>`
+		`<div class="right"><a href="/jobs">Browse all jobs</a></div>`
 		`<p>Last `, indexPageSize.text, ` jobs:</p>`,
 	);
 	jobTable(indexPageSize, No.pager);
@@ -209,7 +229,7 @@ void showIndex()
 	);
 
 	html.put(
-		`<div style="float:right"><a href="/tasks">Browse all tasks</a></div>`
+		`<div class="right"><a href="/tasks">Browse all tasks</a></div>`
 		`<p>Last `, indexPageSize.text, ` tasks:</p>`,
 	);
 	taskTable(indexPageSize, No.pager);
@@ -253,8 +273,8 @@ void showJob(JobID id)
 			`<table class="horiz">`
 			`<tr><th>ID</th><td>`, id.text, `</td></tr>`
 			`<tr><th>Client</th><td><a href="/client/`, clientID, `">`, clientID, `</a></td></tr>`,
-			`<tr><th>Start time</th><td>`, SysTime(startTime).formatTime!timeFormat, `</td></tr>`
-			`<tr><th>Finish time</th><td>`, finishTime ? SysTime(finishTime).formatTime!timeFormat : "(still running)", `</td></tr>`,
+			`<tr><th>Start time</th><td>`, SysTime(startTime, UTC()).formatTime!timeFormat, `</td></tr>`
+			`<tr><th>Finish time</th><td>`, finishTime ? SysTime(finishTime, UTC()).formatTime!timeFormat : "(still running)", `</td></tr>`,
 			`<tr><th>Status</th><td>`, status, `</td></tr>`,
 			`<tr><th>Error</th><td>`, error ? encodeHtmlEntities(error) : `(no error)`, `</td></tr>`,
 			`<tr><th>Progress</th><td>`, id in activeJobs ? activeJobs[id].progress.text : `(not running)`, `</td></tr>`,
@@ -264,9 +284,14 @@ void showJob(JobID id)
 		taskTable(0, No.pager, "WHERE [Hash]=?", hash);
 
 		html.put(
+			`<div class="heading-right">`
+			`<a href="`, text(id), `/log.html">expand</a>`
+			` &middot; `
+			`<a href="`, text(id), `/log.txt">raw</a>`
+			`</div>`
 			`<h3>Log</h3>`
 		);
-		showLog(jobDir(id).buildPath("log.json"));
+		showLog(id);
 
 		// TODO: Live status (log etc.)
 		return;
@@ -274,8 +299,9 @@ void showJob(JobID id)
 	throw new NotFoundException("No such job");
 }
 
-void showLog(string fileName)
+void showLog(JobID id)
 {
+	auto fileName = jobDir(id).buildPath("log.json");
 	html.put(
 		`<pre class="log">`
 	);
@@ -285,12 +311,12 @@ void showLog(string fileName)
 		{
 			auto message = line.jsonParse!LogMessage();
 			html.put(
-				`<div class="log-`, message.type.text, `">`
+				`<div>`
 				`[`,
-				SysTime(message.time).formatTime!timeFormat,
-				`] `,
+				SysTime(message.time, UTC()).formatTime!timeFormat,
+				`] <span class="log-`, message.type.text, `">`,
 				encodeHtmlEntities(message.text),
-				`</div>`
+				`</span></div>`
 			);
 		}
 		catch (Exception e)
@@ -300,6 +326,21 @@ void showLog(string fileName)
 		`</pre>`
 	);
 	// TODO: stream in changes live
+}
+
+void showTextLog(JobID id)
+{
+	auto fileName = jobDir(id).buildPath("log.json");
+	foreach (line; File(fileName, "rb").byLine())
+	{
+		try
+		{
+			auto message = line.jsonParse!LogMessage();
+			html.put(`[`, SysTime(message.time, UTC()).formatTime!timeFormat, `] `, message.text, "\n");
+		}
+		catch (Exception e)
+			continue;
+	}
 }
 
 void showTasks()
@@ -355,8 +396,8 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 		html.put(
 			`<tr>`
 			`<td><a href="/job/`, text(jobID), `">`, text(jobID), `</a></td>`,
-			`<td>`, SysTime(startTime).formatTime!timeFormat, `</td>`,
-			`<td>`, finishTime ? SysTime(finishTime).formatTime!timeFormat : "-", `</td>`,
+			`<td>`, SysTime(startTime, UTC()).formatTime!timeFormat, `</td>`,
+			`<td>`, finishTime ? SysTime(finishTime, UTC()).formatTime!timeFormat : "-", `</td>`,
 			`<td><a href="/client/`, clientID, `">`, clientID, `</a></td>`,
 			`<td>`, status, `</td>`, // TODO: explanation in title attribute
 			`</tr>`
@@ -399,7 +440,7 @@ void workerTable()
 			);
 		else
 			html.put(
-				`<td rowspan="2">(idle)</td>`
+				`<td colspan="2">(idle)</td>`
 			);
 	}
 	html.put(

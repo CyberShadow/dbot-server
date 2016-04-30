@@ -1,11 +1,23 @@
 body {
 	font-family: "Noto Sans", "Open Sans", sans-serif;
+}
+
+body.page {
 	max-width: 50em;
 	margin: 2em auto;
 }
 
 h3 {
 	border-bottom: 0.15em solid black;
+}
+
+.right {
+	float: right;
+}
+
+.heading-right {
+	float: right;
+	margin-top: 1.5em;
 }
 
 table, pre {
@@ -47,7 +59,24 @@ table.tasks tr > :nth-child(2) {
 pre.log {
 	overflow-y: auto;
 	white-space: pre-wrap;
-	max-height: 25em;
+	word-wrap: break-word;
+	max-height: 50em;
+}
+
+pre.log .log-stdout { color: #004; }
+pre.log .log-stderr { color: #404; }
+pre.log .log-log    { color: #040; }
+pre.log .log-server { color: #044; }
+pre.log .log-error  { color: #400; }
+
+/* Bare */
+
+body.bare h1 {
+	display: none;
+}
+
+body.bare pre.log {
+	max-height: none;
 }
 
 /* Doc diffs */
