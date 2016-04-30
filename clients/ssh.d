@@ -27,6 +27,16 @@ final class SshClient : Client
 		Pid pid;
 		string abortReason;
 
+		static class ProcessConnection : TcpConnection
+		{
+			this(Socket conn)
+			{
+				conn.blocking = false;
+				super(conn);
+			}
+		}
+		ProcessConnection cStdOut, cStdErr;
+
 		final void launch(string[] args)
 		{
 			import std.socket;
@@ -44,17 +54,8 @@ final class SshClient : Client
 			// just in case these callbacks outlive the job
 			abortReason = null;
 
-			void wrapSocket(Socket socket, Message.Log.Type messageLogType)
+			ProcessConnection wrapSocket(Socket socket, Message.Log.Type messageLogType)
 			{
-				static class ProcessConnection : TcpConnection
-				{
-					this(Socket conn)
-					{
-						conn.blocking = false;
-						super(conn);
-					}
-				}
-
 				auto conn = new ProcessConnection(socket);
 				auto lbuf = new LineBufferedAdapter(conn);
 				lbuf.delimiter = "\n";
@@ -78,6 +79,9 @@ final class SshClient : Client
 				lbuf.handleDisconnect =
 					(string reason, DisconnectType type)
 					{
+						if (this.done)
+							return; // Doesn't matter, already completed
+
 						log("Stream %s disconnected (%s) with reason %s".format(messageLogType, type, reason));
 						if (messageLogType == Message.Log.Type.stdout) // Just for one of them
 						{
@@ -101,16 +105,21 @@ final class SshClient : Client
 							}
 						}
 					};
+				return conn;
 			}
 
-			wrapSocket(pStdOut[1], Message.Log.Type.stdout);
-			wrapSocket(pStdErr[1], Message.Log.Type.stderr);
+			cStdOut = wrapSocket(pStdOut[1], Message.Log.Type.stdout);
+			cStdErr = wrapSocket(pStdErr[1], Message.Log.Type.stderr);
 		}
 
 		override void abort(string reason)
 		{
 			log("Aborting (%s) - killing process %d".format(reason, pid.processID));
 			abortReason = reason;
+			if (cStdOut.state != ConnectionState.disconnected)
+				cStdOut.disconnect();
+			if (cStdErr.state != ConnectionState.disconnected)
+				cStdErr.disconnect();
 			pid.kill();
 		}
 	}
