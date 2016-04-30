@@ -60,7 +60,7 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 		switch (path[0])
 		{
 			case "":
-				title = "Index";
+				title = "DBot status";
 				showIndex();
 				break;
 			/*
@@ -161,8 +161,6 @@ mixin DeclareException!q{NotFoundException};
 void showIndex()
 {
 	html.put(
-		`<h1>DBot status.</h1>`
-
 		`<h3>Metrics</h3>`
 		`<p>(TODO)</p>`
 
@@ -199,7 +197,7 @@ void jobTable(int limit)
 	foreach (long jobID, StdTime startTime, StdTime finishTime, string hash, string clientID, string status;
 		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] ORDER BY [ID] DESC LIMIT ?").iterate(limit))
 	{
-		enum timeFormat = "Y-m-d H:i:s";
+		enum timeFormat = "Y-m-d H:i:s.E";
 		html.put(
 			`<tr>`
 			`<td><a href="/job/"`, text(jobID), `">`, text(jobID), `</a></td>`,

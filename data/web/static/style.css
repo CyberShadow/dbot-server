@@ -8,12 +8,24 @@ pre {
 	margin: 0;
 }
 
-table {
-	width: 100%;
+h3 {
+	border-bottom: 0.15em solid black;
 }
 
-td {
+table {
+	width: 100%;
+	background-color: #f8f8f8;
+	border: 1px solid #eee;
+	border-collapse: collapse;
+}
+
+th {
+	background-color: #f0f0f0;
+}
+
+th, td {
 	text-align: center;
+	border: 1px solid #eee;
 }
 
 table.changes > tbody > tr > td {
