@@ -44,12 +44,9 @@ class Client
 	abstract void startJob();
 
 	/// Abort the currently running job, if possible.
-	/// If aborted, client becomes idle. Prod if necessary.
-	/// The partial job result should still be reported via jobComplete.
-	void abortJob(string reason)
-	{
-		// TODO: accept a reason parameter
-	}
+	/// If aborted, client picks up the next job as usual.
+	/// The partial job result must still be reported via jobComplete.
+	void abortJob(string reason) {}
 
 protected:
 	/// DMD version used to build the client
@@ -111,13 +108,7 @@ protected:
 		{
 			case Message.Type.log:
 			{
-				LogMessage logMessage;
-				logMessage.type = message.log.type;
-				logMessage.text = message.log.text;
-				logMessage.time = Clock.currTime().stdTime;
-
-				job.logSink.writeln(logMessage.toJson());
-				job.logSink.flush();
+				job.log(message.log.text, message.log.type);
 
 				if (!job.done && message.log.type == Message.Log.Type.error)
 				{
@@ -142,7 +133,7 @@ protected:
 
 	final void reportResult(Job* job)
 	{
-		log("Job %d (%s) belonging to client %s complete with status %s (%s)"
+		job.log("Job %d (%s) belonging to client %s complete with status %s (%s)"
 			.format(job.id, job.task.jobKey, this.id, result.status, result.error ? result.error : "no error"));
 		assert(job is this.job);
 		this.job = null;

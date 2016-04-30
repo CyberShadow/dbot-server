@@ -4,6 +4,7 @@ import core.sys.posix.unistd : dup;
 
 import std.algorithm.searching;
 import std.process;
+import std.string;
 
 import ae.net.asockets;
 import ae.utils.json;
@@ -74,10 +75,15 @@ class SshClient : Client
 					}
 				};
 
-			if (messageLogType == Message.Log.Type.stdout)
-				lbuf.handleDisconnect =
-					(string reason, DisconnectType type)
+			lbuf.handleDisconnect =
+				(string reason, DisconnectType type)
+				{
+					log("Stream %s disconnected (%s) with reason %s".format(messageLogType, type, reason));
+					if (messageLogType == Message.Log.Type.stdout) // Just for one of them
 					{
+						log("Reaping process %d...".format(pid.processID));
+						auto status = pid.wait();
+						log("Reaped with status %d.".format(status));
 						if (!job.done)
 						{
 							if (abortReason)
@@ -92,8 +98,8 @@ class SshClient : Client
 							}
 							reportResult(job);
 						}
-						pid.wait();
-					};
+					}
+				};
 		}
 
 		wrapSocket(pStdOut[1], Message.Log.Type.stdout);

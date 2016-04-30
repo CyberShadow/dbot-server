@@ -94,6 +94,20 @@ struct Job
 		this.id = id;
 		this.task = task;
 	}
+
+	void log(string text, Message.Log.Type type = Message.Log.Type.server)
+	{
+		LogMessage logMessage;
+		logMessage.type = type;
+		logMessage.text = text;
+		logMessage.time = Clock.currTime().stdTime;
+
+		logSink.writeln(logMessage.toJson());
+		logSink.flush();
+
+		if (type == Message.Log.Type.server)
+			.log("[Job %d] %s".format(id, text));
+	}
 }
 
 /// Represents all information needed to create or rerun a job
@@ -228,11 +242,12 @@ Job* getJob(string clientID)
 		.exec(Clock.currTime.stdTime, task.spec.hash, clientID, JobStatus.started.text);
 
 	auto job = new Job(db.lastInsertRowID, task);
-	log("Assigning job %d (%s) for client %s".format(job.id, task.jobKey, clientID));
 
 	auto logFileName = jobDir(job.id).buildPath("log.json");
 	logFileName.ensurePathExists();
 	job.logSink = File(logFileName, "wb");
+	job.log("Assigning job %d (%s) for client %s".format(job.id, task.jobKey, clientID));
+
 	return job;
 }
 
