@@ -19,20 +19,12 @@ class Client
 	Config.Client clientConfig;
 	string id;
 
-	Job* job;
+	Job job; /// Current job
 
 	this(string id, Config.Client clientConfig)
 	{
 		this.id = id;
 		this.clientConfig = clientConfig;
-	}
-
-	final void run()
-	{
-		assert(!job);
-		job = getJob(id);
-		if (job)
-			startJob();
 	}
 
 	final void prod()
@@ -41,14 +33,20 @@ class Client
 			run();
 	}
 
-	abstract void startJob();
+	Job createJob() { return new Job(); }
 
-	/// Abort the currently running job, if possible.
-	/// If aborted, client picks up the next job as usual.
-	/// The partial job result must still be reported via jobComplete.
-	void abortJob(string reason) {}
+private:
+	final void run()
+	{
+		assert(!job);
+		job = getJob(this);
+		if (job)
+			startJob(job);
+	}
 
 protected:
+	abstract void startJob(Job job); /// Start the assigned job.
+
 	/// DMD version used to build the client
 	static const dmdVer = "2.071.0";
 
@@ -100,9 +98,7 @@ protected:
 		];
 	}
 
-	JobResult result; // Result so far
-
-	final void handleMessage(Job* job, Message message)
+	final void handleMessage(Job job, Message message)
 	{
 		final switch (message.type)
 		{
@@ -112,9 +108,9 @@ protected:
 
 				if (!job.done && message.log.type == Message.Log.Type.error)
 				{
-					result.status = JobStatus.failure;
+					job.result.status = JobStatus.failure;
 					if (message.log.text.length)
-						result.error = message.log.text.splitLines()[0];
+						job.result.error = message.log.text.splitLines()[0];
 					reportResult(job);
 				}
 				break;
@@ -124,20 +120,20 @@ protected:
 				log("Client %s / job %d progress: %s".format(this.id, job.id, message.progress.type));
 				if (!job.done && job.progress == Message.Progress.Type.done)
 				{
-					result.status = JobStatus.success;
+					job.result.status = JobStatus.success;
 					reportResult(job);
 				}
 				break;
 		}
 	}
 
-	final void reportResult(Job* job)
+	final void reportResult(Job job)
 	{
 		job.log("Job %d (%s) belonging to client %s complete with status %s (%s)"
-			.format(job.id, job.task.jobKey, this.id, result.status, result.error ? result.error : "no error"));
+			.format(job.id, job.task.jobKey, this.id, job.result.status, job.result.error ? job.result.error : "no error"));
 		assert(job is this.job);
 		this.job = null;
-		jobComplete(job, result);
+		jobComplete(job);
 		run();
 	}
 }
@@ -166,7 +162,7 @@ void stopClients(string reason)
 {
 	foreach (id, client; allClients)
 		if (client.job)
-			client.abortJob(reason);
+			client.job.abort(reason);
 }
 
 void prodClients()

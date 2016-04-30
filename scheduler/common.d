@@ -69,31 +69,25 @@ struct LogMessage
 	string text;
 }
 
-/// A job is one client's task instance, and corresponds to one row in the [Jobs] table
-// TODO: Maybe this should be a class
-struct Job
+struct JobResult
 {
-	/// The job ID, as the [Jobs].[ID] database field
-	long id;
+	JobStatus status; /// success/failure/error/obsoleted
+	string error; /// error message; null if no error
+	// TODO: build cache keys (for doc diffs from local server)
+	// TODO: coverage
+	// TODO: metrics
+}
 
-	/// Contains:
-	/// - information that's passed on the client's command line
-	/// - information needed by scheduler to mark the task as completed
-	///   and make relevant information available
-	/// - information needed to know whether this job should be canceled?
-	///   (we can also store pointers to this job)
-
-	const Task task;
+/// A job is one client's task instance, and corresponds to one row in the [Jobs] table
+class Job
+{
+	long id;   /// The job ID, as the [Jobs].[ID] database field
+	Task task; /// The corresponding task
+	JobResult result; /// Result so far
 
 	bool done = false; // Result has been reported
 	Message.Progress.Type progress;
 	File logSink;
-
-	this(long id, Task task)
-	{
-		this.id = id;
-		this.task = task;
-	}
 
 	void log(string text, Message.Log.Type type = Message.Log.Type.server)
 	{
@@ -108,6 +102,11 @@ struct Job
 		if (type == Message.Log.Type.server)
 			.log("[Job %d] %s".format(id, text));
 	}
+
+	/// Abort the currently running job, if possible.
+	/// If aborted, client picks up the next job as usual.
+	/// The partial job result must still be reported via jobComplete.
+	void abort(string reason) {}
 }
 
 /// Represents all information needed to create or rerun a job
@@ -191,15 +190,6 @@ struct Spec
 	}
 }
 
-struct JobResult
-{
-	JobStatus status; /// success/failure/error/obsoleted
-	string error; /// error message; null if no error
-	// TODO: build cache keys (for doc diffs from local server)
-	// TODO: coverage
-	// TODO: metrics
-}
-
 string jobDir(long id)
 {
 	return "stor/jobs/%d".format(id);
@@ -207,21 +197,21 @@ string jobDir(long id)
 
 /// Return the next task to be done by a worker client,
 /// or null if there is no more work for this client.
-Job* getJob(string clientID)
+Job getJob(Client client)
 {
 	if (shuttingDown)
 		return null;
 
 	auto task = (){
-		auto taskSources = taskSourceFactories.map!(f => f(clientID)).array();
+		auto taskSources = taskSourceFactories.map!(f => f(client.id)).array();
 
 		foreach_reverse (priorityGroup; Priority.Group.idle .. enumLength!(Priority.Group))
 		{
 			// Alternate between multiple task sources at same priority
 			static int[enumLength!(Priority.Group)][string] sourceCounters;
-			if (clientID !in sourceCounters)
-				sourceCounters[clientID] = typeof(sourceCounters[clientID]).init;
-			auto counter = sourceCounters[clientID][priorityGroup]++;
+			if (client.id !in sourceCounters)
+				sourceCounters[client.id] = typeof(sourceCounters[client.id]).init;
+			auto counter = sourceCounters[client.id][priorityGroup]++;
 			foreach (n; 0..taskSources.length)
 			{
 				auto tasks = taskSources[(n + counter) % $].getTasks(priorityGroup);
@@ -234,19 +224,22 @@ Job* getJob(string clientID)
 
 	if (!task)
 	{
-		log("No task found for client " ~ clientID);
+		log("No task found for client " ~ client.id);
 		return null;
 	}
 
 	query("INSERT INTO [Jobs] ([StartTime], [Hash], [ClientID], [Status]) VALUES (?, ?, ?, ?)")
-		.exec(Clock.currTime.stdTime, task.spec.hash, clientID, JobStatus.started.text);
+		.exec(Clock.currTime.stdTime, task.spec.hash, client.id, JobStatus.started.text);
+	auto jobID = db.lastInsertRowID;
 
-	auto job = new Job(db.lastInsertRowID, task);
+	auto job = client.createJob();
+	job.id = jobID;
+	job.task = task;
 
 	auto logFileName = jobDir(job.id).buildPath("log.json");
 	logFileName.ensurePathExists();
 	job.logSink = File(logFileName, "wb");
-	job.log("Assigning job %d (%s) for client %s".format(job.id, task.jobKey, clientID));
+	job.log("Assigning job %d (%s) for client %s".format(job.id, task.jobKey, client.id));
 
 	return job;
 }
@@ -260,13 +253,14 @@ class TaskSource
 TaskSource function(string clientID)[] taskSourceFactories;
 
 /// Called by a client to report a job's completion, whether it suceeded or errored.
-void jobComplete(Job* job, JobResult result)
+void jobComplete(Job job)
 {
 	assert(!job.done, "Duplicate job completion report");
 	job.done = true;
 	job.logSink.close();
 	query("UPDATE [Jobs] SET [FinishTime]=?, [Status]=?, [Error]=?")
-		.exec(Clock.currTime.stdTime, result.status.text, result.error);
+		.exec(Clock.currTime.stdTime, job.result.status.text, job.result.error);
+	// TODO: Save other JobResult fields
 }
 
 /// Current commits of meta-repository and individual repository branches.
@@ -332,7 +326,7 @@ class Task
 	/// Return true if we should abort the given job due to the given action performed with this task.
 	/// E.g. if action is Action.create or Action.modify, does this task supersede that job?
 	/// Or if action is Action.remove, does that (the PR being closed etc.) make this job obsolete?
-	bool obsoletes(Job* job, Action action) const { return false; }
+	bool obsoletes(Job job, Action action) const { return false; }
 
 	/// Return the priority (higher = more important) for the given client ID.
 	/// Return PriorityGroup.none to skip this task for this client.
@@ -408,7 +402,7 @@ void handleTask(Task task, Action action)
 	}
 	foreach (client; allClients)
 		if (client.job && task.obsoletes(client.job, action))
-			client.abortJob("Obsoleted by %s".format(task.jobKey));
+			client.job.abort("Obsoleted by %s".format(task.jobKey));
 	prodClients();
 
 	if (action != Action.remove)
