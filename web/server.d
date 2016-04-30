@@ -263,6 +263,9 @@ void showJob(JobID id)
 		);
 		taskTable(0, No.pager, "WHERE [Hash]=?", hash);
 
+		html.put(
+			`<h3>Log</h3>`
+		);
 		showLog(jobDir(id).buildPath("log.json"));
 
 		// TODO: Live status (log etc.)
@@ -282,7 +285,7 @@ void showLog(string fileName)
 		{
 			auto message = line.jsonParse!LogMessage();
 			html.put(
-				`<div class="log-`, message.type.text, `"`
+				`<div class="log-`, message.type.text, `">`
 				`[`,
 				SysTime(message.time).formatTime!timeFormat,
 				`] `,
@@ -407,10 +410,10 @@ void workerTable()
 void taskTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args args = Args.init)
 {
 	html.put(
-		`<table class="vert">`
+		`<table class="vert tasks">`
 		`<tr>`
 		`<th>Task</th>`
-		`<th style="width: 100%">Title</th>`
+		`<th>Title</th>`
 		`</tr>`
 	);
 	if (!limit)
