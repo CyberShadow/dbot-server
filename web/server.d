@@ -185,6 +185,7 @@ void showIndex()
 void jobTable(int limit)
 {
 	// TODO: show tasks too
+
 	html.put(
 		`<table>`
 		`<tr>`
@@ -205,7 +206,7 @@ void jobTable(int limit)
 			`<td>`, SysTime(startTime).formatTime!timeFormat, `</td>`,
 			`<td>`, finishTime ? SysTime(finishTime).formatTime!timeFormat : "-", `</td>`,
 			`<td><a href="/client/"`, clientID, `">`, clientID, `</a></td>`,
-			`<td>`, status, `</td>`,
+			`<td>`, status, `</td>`, // TODO: explanation in title attribute
 			`</tr>`
 		);
 	}

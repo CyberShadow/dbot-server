@@ -4,23 +4,16 @@ body {
 	margin: 2em auto;
 }
 
-body > table > tbody > tr > td {
-	padding: 0.5em 1em 0 0;
-	vertical-align: top;
-}
-
-body > table > tbody > tr > td:first-child {
-	font-weight: bold;
-	width: 1px;
-	white-space: pre;
-}
-
 pre {
 	margin: 0;
 }
 
 table {
 	width: 100%;
+}
+
+td {
+    text-align: center;
 }
 
 table.changes > tbody > tr > td {
@@ -51,3 +44,17 @@ table.changes > tbody > tr > td:first-child {
 	list-style: none;
 	white-space: pre;
 }
+
+/* Doc diffs */
+
+body > table.diff > tbody > tr > td {
+	padding: 0.5em 1em 0 0;
+	vertical-align: top;
+}
+
+body > table.diff > tbody > tr > td:first-child {
+	font-weight: bold;
+	width: 1px;
+	white-space: pre;
+}
+
