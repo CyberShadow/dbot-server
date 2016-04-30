@@ -117,7 +117,7 @@ protected:
 			}
 			case Message.Type.progress:
 				job.progress = message.progress.type;
-				log("Client %s / job %d progress: %s".format(this.id, job.id, message.progress.type));
+				job.log("Client %s / job %d progress: %s".format(this.id, job.id, message.progress.type));
 				if (!job.done && job.progress == Message.Progress.Type.done)
 				{
 					job.result.status = JobStatus.success;
