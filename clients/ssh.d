@@ -139,9 +139,10 @@ final class SshClient : Client
 
 	override void startJob(Job job)
 	{
-		auto cmdLine = ["ssh", clientConfig.ssh.host, "bash", "-s"];
+		auto cmdLine = ["bash", "-s"];
 		cmdLine ~= bootstrapArgs;
 		cmdLine ~= job.task.spec.commandLine;
+		cmdLine = ["ssh", clientConfig.ssh.host, escapeShellCommand(cmdLine)];
 		(cast(SshJob)job).launch(cmdLine);
 	}
 }
