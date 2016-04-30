@@ -2,7 +2,7 @@
 
 <link rel="stylesheet" href="/static/style.css" />
 
-<title><?title?> - DAutoTest</title>
+<title><?title?> - DBot</title>
 
 <body>
 <h1><?title?></h1>

@@ -1,32 +1,20 @@
 module web.server;
 
 import std.algorithm;
-// import std.array;
 import std.conv;
 import std.datetime;
 import std.exception;
-// import std.file;
-// import std.format;
 import std.functional;
-// import std.path;
-// import std.regex;
+import std.meta;
 import std.string;
+import std.typecons;
 
-// import ae.net.asockets;
-// import ae.net.http.common;
 import ae.net.http.responseex;
 import ae.net.http.server;
 import ae.net.shutdown;
-// import ae.sys.d.cache;
-// import ae.sys.file;
 import ae.sys.git;
 import ae.sys.log;
-// import ae.utils.array;
 import ae.utils.exception;
-// import ae.utils.meta;
-// import ae.utils.mime;
-// import ae.utils.regex;
-// import ae.utils.sini;
 import ae.utils.textout;
 import ae.utils.time;
 import ae.utils.xmllite;
@@ -62,6 +50,11 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 			case "":
 				title = "DBot status";
 				showIndex();
+				break;
+			case "worker":
+				title = "Worker " ~ path[1];
+				enforce!NotFoundException(path.length == 2, "Bad path");
+				showWorker(path[1]);
 				break;
 			/*
 			case "results":
@@ -146,6 +139,8 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 		return response.writeError(status, e.toString());
 	}
 
+	assert(title, "No title");
+
 	auto vars = [
 		"title" : title,
 		"content" : cast(string) html.get(),
@@ -172,7 +167,7 @@ void showIndex()
 		`<div style="float:right"><a href="/jobs/">Browse all jobs</a></div>`
 		`<p>Last `, jobsShown.text, ` jobs:</p>`,
 	);
-	jobTable(jobsShown);
+	jobTable(jobsShown, No.pager);
 
 	html.put(
 		`<h3>Workers</h3>`
@@ -180,7 +175,24 @@ void showIndex()
 	workerTable();
 }
 
-void jobTable(int limit)
+void showWorker(string clientID)
+{
+	auto pClient = clientID in allClients;
+	enforce!NotFoundException(pClient);
+	auto client = *pClient;
+
+	html.put(
+		`<table>`
+		`<tr><th>ID</th><td>`, client.id, `</td></tr>`
+		`<tr><th>Driver</th><td>`, client.clientConfig.type.text, `</td></tr>`
+		`</tr>`
+		`<h3>Jobs</h3>`
+	);
+
+	jobTable(25, Yes.pager, "WHERE [ClientID] = ?", clientID);
+}
+
+void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args args = Args.init)
 {
 	// TODO: show tasks too
 
@@ -190,12 +202,12 @@ void jobTable(int limit)
 		`<th>ID</th>`
 		`<th>Start</th>`
 		`<th>Finish</th>`
-		`<th>Client</th>`
+		`<th>Worker</th>`
 		`<th>Status</th>`
 		`</tr>`
 	);
 	foreach (long jobID, StdTime startTime, StdTime finishTime, string hash, string clientID, string status;
-		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] ORDER BY [ID] DESC LIMIT ?").iterate(limit))
+		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] " ~ where ~ "ORDER BY [ID] DESC LIMIT ?").iterate(args, limit))
 	{
 		enum timeFormat = "Y-m-d H:i:s.E";
 		html.put(
@@ -211,6 +223,8 @@ void jobTable(int limit)
 	html.put(
 		`</table>`
 	);
+
+	// TODO: pager
 }
 
 void workerTable()
@@ -228,12 +242,12 @@ void workerTable()
 	{
 		html.put(
 			`<tr>`
-			`<td>`, client.id, `</td>`,
+			`<td><a href="/worker/`, client.id, `">`, client.id, `</a></td>`,
 			`<td>`, client.clientConfig.type.text, `</td>`,
 		);
 		if (client.job)
 			html.put(
-				`<td>`, `<a href="/job/`, client.job.id.text, `">`, client.job.id.text, `</a></td>`,
+				`<td><a href="/job/`, client.job.id.text, `">`, client.job.id.text, `</a></td>`,
 				`<td>`, client.job.progress.text, `</td>`,
 			);
 		else
