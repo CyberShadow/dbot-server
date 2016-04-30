@@ -16,6 +16,7 @@ import ae.net.http.server;
 import ae.net.shutdown;
 import ae.sys.git;
 import ae.sys.log;
+import ae.utils.array;
 import ae.utils.exception;
 import ae.utils.json;
 import ae.utils.text.html;
@@ -27,8 +28,9 @@ import clients;
 import common;
 import scheduler.common;
 
-StringBuffer html;
+private StringBuffer html;
 private Logger log;
+private int page; // 0-indexed
 
 void onRequest(HttpRequest request, HttpServerConnection conn)
 {
@@ -44,12 +46,18 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 
 	try
 	{
-		auto pathStr = request.resource.findSplit("?")[0];
+		string pathStr, argStr;
+		list(pathStr, null, argStr) = request.resource.findSplit("?");
 		enforce(pathStr.startsWith('/'), "Invalid path");
 		auto path = pathStr[1..$].split("/");
 		if (!path.length) path = [""];
 
-		pathSwitch:
+		page = 0;
+		auto args = decodeUrlParameters(argStr);
+		if ("page" in args)
+			page = args["page"].to!int - 1;
+
+	pathSwitch:
 		switch (path[0])
 		{
 			case "":
@@ -206,8 +214,8 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 mixin DeclareException!q{NotFoundException};
 
 const indexPageSize = 10;
-const inlinePageSize = 25;
-const fullPageSize = 50;
+const inlinePageSize = 20;
+const fullPageSize = 30;
 
 void showIndex()
 {
@@ -391,7 +399,7 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 	);
 	int count;
 	foreach (JobID jobID, StdTime startTime, StdTime finishTime, string hash, string clientID, string status;
-		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] " ~ where ~ "ORDER BY [ID] DESC LIMIT ?").iterate(args, limit))
+		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] " ~ where ~ "ORDER BY [ID] DESC LIMIT ? OFFSET ?").iterate(args, limit, page * limit))
 	{
 		html.put(
 			`<tr>`
@@ -412,7 +420,8 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 		`</table>`
 	);
 
-	// TODO: pager
+	if (count && pager)
+		showPager(getPageCount(query("SELECT COUNT(*) FROM [Jobs] " ~ where).iterate(args).selectValue!int, limit));
 }
 
 void workerTable()
@@ -461,7 +470,7 @@ void taskTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args
 		limit = int.max;
 	int count;
 	foreach (string key, string specJson;
-		query("SELECT [Key], [Spec] FROM [Tasks] " ~ where ~ "ORDER BY [RowID] DESC LIMIT ?").iterate(args, limit))
+		query("SELECT [Key], [Spec] FROM [Tasks] " ~ where ~ "ORDER BY [RowID] DESC LIMIT ? OFFSET ?").iterate(args, limit, page * limit))
 	{
 		auto spec = jsonParse!Spec(specJson);
 		auto parsedKey = parseJobKey(key);
@@ -482,7 +491,56 @@ void taskTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args
 		`</table>`
 	);
 
-	// TODO: pager
+	if (count && pager)
+		showPager(getPageCount(query("SELECT COUNT(*) FROM [Tasks] " ~ where).iterate(args).selectValue!int, limit));
+}
+
+int getPageCount(int count, int perPage) { return (count + perPage-1) / perPage; }
+
+void showPager(int pageCount)
+{
+	if (pageCount <= 1)
+		return;
+
+	string linkOrNot(string text, int page, bool cond)
+	{
+		if (cond)
+			return `<a href="?page=` ~ .text(page+1) ~ `">` ~ text ~ `</a>`;
+		else
+			return `<span class="disabled-link">` ~ text ~ `</span>`;
+	}
+
+	// Try to make the pager as wide as it will fit in the alotted space
+
+	int radius = 3;
+	int pagerStart = max(0, page - radius);
+	int pagerEnd = min(pageCount - 1, page + radius);
+
+	string[] pager;
+	if (pagerStart > 1)
+		pager ~= "&hellip;";
+	foreach (pagerPage; pagerStart..pagerEnd+1)
+		if (pagerPage == page)
+			pager ~= `<b>` ~ text(pagerPage+1) ~ `</b>`;
+		else
+			pager ~= linkOrNot(text(pagerPage+1), pagerPage, true);
+	if (pagerEnd < pageCount - 1)
+		pager ~= "&hellip;";
+
+	html.put(
+		`<div class="pager">`
+			`<div class="pager-left">`,
+				linkOrNot("&laquo; First", 0, page!=0),
+				`&nbsp;&nbsp;&nbsp;`,
+				linkOrNot("&lsaquo; Prev", page-1, page>1),
+			`</div>`
+			`<div class="pager-right">`,
+				linkOrNot("Next &rsaquo;", page+1, page<pageCount),
+				`&nbsp;&nbsp;&nbsp;`,
+				linkOrNot("Last &raquo; ", pageCount-1, page!=pageCount-1),
+			`</div>`
+			`<div class="pager-numbers">`, pager.join(` `), `</div>`
+		`</div>`);
 }
 
 void startWebServer()

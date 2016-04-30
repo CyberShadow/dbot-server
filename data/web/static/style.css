@@ -20,7 +20,8 @@ h3 {
 	margin-top: 1.5em;
 }
 
-table, pre {
+table, .pager,
+body.page pre {
 	background-color: #f8f8f8;
 	border: 1px solid #eee;
 }
@@ -57,9 +58,12 @@ table.tasks tr > :nth-child(2) {
 }
 
 pre.log {
-	overflow-y: auto;
 	white-space: pre-wrap;
 	word-wrap: break-word;
+}
+
+body.page pre.log {
+	overflow-y: auto;
 	max-height: 50em;
 }
 
@@ -68,6 +72,10 @@ pre.log .log-stderr { color: #404; }
 pre.log .log-log    { color: #040; }
 pre.log .log-server { color: #044; }
 pre.log .log-error  { color: #400; }
+
+.pager { text-align: center; border-top: none; padding: 0 0.5em; }
+.pager-left  { float: left ; }
+.pager-right { float: right; }
 
 /* Bare */
 
