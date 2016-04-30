@@ -8,8 +8,10 @@ import std.datetime;
 import std.json;
 import std.range.interfaces;
 import std.string;
+import std.typecons;
 
 import ae.utils.meta : enumLength;
+import ae.utils.text.html;
 import ae.utils.time.common;
 import ae.utils.time.parse;
 
@@ -119,6 +121,27 @@ void handleBranch(SysTime time, string name, string commit, Action action)
 	handleTask(new BranchTask, action);
 }
 
+static this()
+{
+	jobKeyParsers ~=
+		(string key, ref ParsedJobKey result)
+		{
+			auto parts = key.split(":");
+			if (parts.length == 3 && parts[1] == "branch")
+			{
+				result.name = parts[0];
+				result.description = "Branch %s (meta-commit %s)".format(parts[0], parts[2]);
+				// Although we could link to Bitbucket here
+				// (e.g. https://bitbucket.org/cybershadow/d/branch/master),
+				// there is really nothing useful in such a link.
+				result.htmlDetails ~= tuple("Branch", parts[0]);
+				result.htmlDetails ~= tuple("Meta-commit", parts[0]);
+				return true;
+			}
+			return false;
+		};
+}
+
 /// Handle a GitHub pull request state change
 void handlePull(SysTime time, string org, string repo, int number, string commit, string targetBranch, string description, Action action)
 {
@@ -214,6 +237,28 @@ void handlePull(SysTime time, string org, string repo, int number, string commit
 	}
 
 	handleTask(new PullTask, action);
+}
+
+static this()
+{
+	jobKeyParsers ~=
+		(string key, ref ParsedJobKey result)
+		{
+			auto parts = key.split(":");
+			if (parts.length == 7 && parts[1] == "pr")
+			{
+				result.name = "%s/#%s".format(parts[3], parts[4]);
+				result.description = "%s/%s pull request #%s".format(parts[2], parts[3], parts[4]);
+				result.htmlDetails ~= tuple("Target branch", parts[0]);
+				result.htmlDetails ~= tuple("Target meta-commit", parts[6]);
+				result.htmlDetails ~= tuple("Target repository",
+					`<a href="https://github.com/%1$s/%2$s">%1$s/%2$s</a>`.format(parts[2], parts[3]));
+				result.htmlDetails ~= tuple("Pull request", `<a href="https://github.com/%1$s/%2$s/pull/%3$s">#%3$s</a>`.format(parts[2], parts[3], parts[4]));
+				result.htmlDetails ~= tuple("Pull request commit", `<a href="https://github.com/%1$s/%2$s/commit/%3$s">%3$s</a>`.format(parts[2], parts[3], parts[5]));
+				return true;
+			}
+			return false;
+		};
 }
 
 /// Get the current state of the meta-repository branches from BitBucket.

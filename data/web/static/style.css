@@ -24,8 +24,18 @@ th {
 }
 
 th, td {
-	text-align: center;
 	border: 1px solid #eee;
+	padding: 0 0.5em;
+}
+
+table.horiz th,
+table.horiz td {
+	text-align: left;
+}
+
+table.vert th,
+table.vert td {
+	text-align: center;
 }
 
 table.changes > tbody > tr > td {

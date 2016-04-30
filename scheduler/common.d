@@ -10,6 +10,7 @@ import std.path;
 import std.range;
 import std.stdio;
 import std.string;
+import std.typecons;
 
 import ae.net.shutdown;
 import ae.utils.json;
@@ -78,10 +79,12 @@ struct JobResult
 	// TODO: metrics
 }
 
+alias JobID = long;
+
 /// A job is one client's task instance, and corresponds to one row in the [Jobs] table
 class Job
 {
-	long id;   /// The job ID, as the [Jobs].[ID] database field
+	JobID id;   /// The job ID, as the [Jobs].[ID] database field
 	Task task; /// The corresponding task
 	JobResult result; /// Result so far
 
@@ -108,6 +111,8 @@ class Job
 	/// The partial job result must still be reported via jobComplete.
 	void abort(string reason) {}
 }
+
+Job[JobID] activeJobs;
 
 /// Represents all information needed to create or rerun a job
 struct Spec
@@ -190,7 +195,7 @@ struct Spec
 	}
 }
 
-string jobDir(long id)
+string jobDir(JobID id)
 {
 	return "stor/jobs/%d".format(id);
 }
@@ -235,6 +240,7 @@ Job getJob(Client client)
 	auto job = client.createJob();
 	job.id = jobID;
 	job.task = task;
+	activeJobs[jobID] = job;
 
 	auto logFileName = jobDir(job.id).buildPath("log.json");
 	logFileName.ensurePathExists();
@@ -244,6 +250,18 @@ Job getJob(Client client)
 	return job;
 }
 
+/// Called by a client to report a job's completion, whether it suceeded or errored.
+void jobComplete(Job job)
+{
+	assert(!job.done, "Duplicate job completion report");
+	job.done = true;
+	job.logSink.close();
+	activeJobs.remove(job.id);
+	query("UPDATE [Jobs] SET [FinishTime]=?, [Status]=?, [Error]=? WHERE [ID]=?")
+		.exec(Clock.currTime.stdTime, job.result.status.text, job.result.error, job.id);
+	// TODO: Save other JobResult fields
+}
+
 class TaskSource
 {
 	// TODO: Maybe this should return just one valid task, and its priority?
@@ -251,17 +269,6 @@ class TaskSource
 }
 
 TaskSource function(string clientID)[] taskSourceFactories;
-
-/// Called by a client to report a job's completion, whether it suceeded or errored.
-void jobComplete(Job job)
-{
-	assert(!job.done, "Duplicate job completion report");
-	job.done = true;
-	job.logSink.close();
-	query("UPDATE [Jobs] SET [FinishTime]=?, [Status]=?, [Error]=?")
-		.exec(Clock.currTime.stdTime, job.result.status.text, job.result.error);
-	// TODO: Save other JobResult fields
-}
 
 /// Current commits of meta-repository and individual repository branches.
 string[string] branches;
@@ -422,4 +429,25 @@ void initializeScheduler()
 	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
 
 	addShutdownHandler({ shuttingDown = true; });
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct ParsedJobKey
+{
+	string name, description;
+	Tuple!(string, string)[] htmlDetails;
+}
+
+bool delegate(string key, ref ParsedJobKey result)[] jobKeyParsers;
+
+ParsedJobKey parseJobKey(string key)
+{
+	ParsedJobKey result;
+	foreach (parser; jobKeyParsers)
+		if (parser(key, result))
+			return result;
+	result.name = key.length ? key.split(":")[0] : null;
+	result.description = key;
+	return result;
 }

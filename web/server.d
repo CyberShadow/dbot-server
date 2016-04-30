@@ -6,7 +6,9 @@ import std.datetime;
 import std.exception;
 import std.functional;
 import std.meta;
+import std.path;
 import std.string;
+import std.stdio : File;
 import std.typecons;
 
 import ae.net.http.responseex;
@@ -15,12 +17,15 @@ import ae.net.shutdown;
 import ae.sys.git;
 import ae.sys.log;
 import ae.utils.exception;
+import ae.utils.json;
+import ae.utils.text.html;
 import ae.utils.textout;
 import ae.utils.time;
 import ae.utils.xmllite;
 
 import clients;
 import common;
+import scheduler.common;
 
 StringBuffer html;
 private Logger log;
@@ -48,14 +53,41 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 		switch (path[0])
 		{
 			case "":
+				enforce!NotFoundException(path.length == 1, "Bad path");
 				title = "DBot status";
 				showIndex();
 				break;
 			case "worker":
-				title = "Worker " ~ path[1];
 				enforce!NotFoundException(path.length == 2, "Bad path");
+				title = "Worker " ~ path[1];
 				showWorker(path[1]);
 				break;
+			case "jobs":
+				enforce!NotFoundException(path.length == 1, "Bad path");
+				title = "Jobs";
+				showJobs();
+				break;
+			case "job":
+			{
+				enforce!NotFoundException(path.length == 2, "Bad path");
+				JobID id = path[1].to!JobID();
+				title = "Job " ~ text(id);
+				showJob(id);
+				break;
+			}
+			case "tasks":
+				enforce!NotFoundException(path.length == 1, "Bad path");
+				title = "Tasks";
+				showTasks();
+				break;
+			case "task":
+			{
+				enforce!NotFoundException(path.length == 2, "Bad path");
+				auto key = path[1];
+				title = "Task " ~ title;
+				showTask(key, title);
+				break;
+			}
 			/*
 			case "results":
 				title = "Test result";
@@ -153,6 +185,10 @@ HttpResponse handleRequest(HttpRequest request, HttpServerConnection conn)
 
 mixin DeclareException!q{NotFoundException};
 
+const indexPageSize = 10;
+const inlinePageSize = 25;
+const fullPageSize = 50;
+
 void showIndex()
 {
 	html.put(
@@ -162,12 +198,21 @@ void showIndex()
 		`<h3>Jobs</h3>`
 	);
 
-	const jobsShown = 10;
 	html.put(
-		`<div style="float:right"><a href="/jobs/">Browse all jobs</a></div>`
-		`<p>Last `, jobsShown.text, ` jobs:</p>`,
+		`<div style="float:right"><a href="/jobs">Browse all jobs</a></div>`
+		`<p>Last `, indexPageSize.text, ` jobs:</p>`,
 	);
-	jobTable(jobsShown, No.pager);
+	jobTable(indexPageSize, No.pager);
+
+	html.put(
+		`<h3>Tasks</h3>`
+	);
+
+	html.put(
+		`<div style="float:right"><a href="/tasks">Browse all tasks</a></div>`
+		`<p>Last `, indexPageSize.text, ` tasks:</p>`,
+	);
+	taskTable(indexPageSize, No.pager);
 
 	html.put(
 		`<h3>Workers</h3>`
@@ -182,15 +227,108 @@ void showWorker(string clientID)
 	auto client = *pClient;
 
 	html.put(
-		`<table>`
+		`<table class="horiz">`
 		`<tr><th>ID</th><td>`, client.id, `</td></tr>`
 		`<tr><th>Driver</th><td>`, client.clientConfig.type.text, `</td></tr>`
-		`</tr>`
 		`</table>`
 		`<h3>Jobs</h3>`
 	);
 
-	jobTable(25, Yes.pager, "WHERE [ClientID] = ?", clientID);
+	jobTable(inlinePageSize, Yes.pager, "WHERE [ClientID] = ?", clientID);
+}
+
+void showJobs()
+{
+	jobTable(fullPageSize, Yes.pager);
+}
+
+enum timeFormat = "Y-m-d H:i:s.E";
+
+void showJob(JobID id)
+{
+	foreach (StdTime startTime, StdTime finishTime, string hash, string clientID, string status, string error;
+		query("SELECT [StartTime], [FinishTime], [Hash], [ClientID], [Status], [Error] FROM [Jobs] WHERE [ID]=?").iterate(id))
+	{
+		html.put(
+			`<table class="horiz">`
+			`<tr><th>ID</th><td>`, id.text, `</td></tr>`
+			`<tr><th>Client</th><td><a href="/client/`, clientID, `">`, clientID, `</a></td></tr>`,
+			`<tr><th>Start time</th><td>`, SysTime(startTime).formatTime!timeFormat, `</td></tr>`
+			`<tr><th>Finish time</th><td>`, finishTime ? SysTime(finishTime).formatTime!timeFormat : "(still running)", `</td></tr>`,
+			`<tr><th>Status</th><td>`, status, `</td></tr>`,
+			`<tr><th>Error</th><td>`, error ? encodeHtmlEntities(error) : `(no error)`, `</td></tr>`,
+			`<tr><th>Progress</th><td>`, id in activeJobs ? activeJobs[id].progress.text : `(not running)`, `</td></tr>`,
+			`</table>`
+			`<h3>Tasks</h3>`
+		);
+		taskTable(0, No.pager, "WHERE [Hash]=?", hash);
+
+		showLog(jobDir(id).buildPath("log.json"));
+
+		// TODO: Live status (log etc.)
+		return;
+	}
+	throw new NotFoundException("No such job");
+}
+
+void showLog(string fileName)
+{
+	html.put(
+		`<pre class="log">`
+	);
+	foreach (line; File(fileName, "rb").byLine())
+	{
+		try
+		{
+			auto message = line.jsonParse!LogMessage();
+			html.put(
+				`<div class="log-`, message.type.text, `"`
+				`[`,
+				SysTime(message.time).formatTime!timeFormat,
+				`] `,
+				encodeHtmlEntities(message.text),
+				`</div>`
+			);
+		}
+		catch (Exception e)
+			continue;
+	}
+	html.put(
+		`</pre>`
+	);
+	// TODO: stream in changes live
+}
+
+void showTasks()
+{
+	taskTable(fullPageSize, Yes.pager);
+}
+
+void showTask(string key, out string title)
+{
+	foreach (string hash; query("SELECT [Hash] FROM [Tasks] WHERE [Key]=?").iterate(key))
+	{
+		title = "(TODO)";
+
+		auto parsedKey = parseJobKey(key);
+		html.put(
+			`<table class="horiz">`
+			`<tr><th>Title</th><td>`, title, `</td></tr>`
+		);
+		foreach (pair; parsedKey.htmlDetails)
+			html.put(
+				`<tr><th>`, pair[0], `</th><td>`, pair[1], `</td></tr>`
+			);
+		html.put(
+			`</table>`
+			`<h3>Jobs</h3>`
+		);
+
+		jobTable(inlinePageSize, Yes.pager, "WHERE [Hash] = ?", hash);
+
+		return;
+	}
+	throw new NotFoundException("No such task");
 }
 
 void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args args = Args.init)
@@ -198,7 +336,7 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 	// TODO: show tasks too
 
 	html.put(
-		`<table>`
+		`<table class="vert">`
 		`<tr>`
 		`<th>ID</th>`
 		`<th>Start</th>`
@@ -207,20 +345,25 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 		`<th>Status</th>`
 		`</tr>`
 	);
-	foreach (long jobID, StdTime startTime, StdTime finishTime, string hash, string clientID, string status;
+	int count;
+	foreach (JobID jobID, StdTime startTime, StdTime finishTime, string hash, string clientID, string status;
 		query("SELECT [ID], [StartTime], [FinishTime], [Hash], [ClientID], [Status] FROM [Jobs] " ~ where ~ "ORDER BY [ID] DESC LIMIT ?").iterate(args, limit))
 	{
-		enum timeFormat = "Y-m-d H:i:s.E";
 		html.put(
 			`<tr>`
-			`<td><a href="/job/"`, text(jobID), `">`, text(jobID), `</a></td>`,
+			`<td><a href="/job/`, text(jobID), `">`, text(jobID), `</a></td>`,
 			`<td>`, SysTime(startTime).formatTime!timeFormat, `</td>`,
 			`<td>`, finishTime ? SysTime(finishTime).formatTime!timeFormat : "-", `</td>`,
-			`<td><a href="/client/"`, clientID, `">`, clientID, `</a></td>`,
+			`<td><a href="/client/`, clientID, `">`, clientID, `</a></td>`,
 			`<td>`, status, `</td>`, // TODO: explanation in title attribute
 			`</tr>`
 		);
+		count++;
 	}
+	if (!count)
+		html.put(
+			`<tr><td colspan="5">(no jobs found)</td></tr>`
+		);
 	html.put(
 		`</table>`
 	);
@@ -231,7 +374,7 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 void workerTable()
 {
 	html.put(
-		`<table>`
+		`<table class="vert">`
 		`<tr>`
 		`<th>ID</th>`
 		`<th>Driver</th>`
@@ -259,6 +402,43 @@ void workerTable()
 	html.put(
 		`</table>`
 	);
+}
+
+void taskTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args args = Args.init)
+{
+	html.put(
+		`<table class="vert">`
+		`<tr>`
+		`<th>Task</th>`
+		`<th style="width: 100%">Title</th>`
+		`</tr>`
+	);
+	if (!limit)
+		limit = int.max;
+	int count;
+	foreach (string key, string specJson;
+		query("SELECT [Key], [Spec] FROM [Tasks] " ~ where ~ "ORDER BY [RowID] DESC LIMIT ?").iterate(args, limit))
+	{
+		auto spec = jsonParse!Spec(specJson);
+		auto parsedKey = parseJobKey(key);
+		string title = "(TODO)";
+		html.put(
+			`<tr>`
+			`<td><a href="/task/`, encodeHtmlEntities(key), `">`, encodeHtmlEntities(parsedKey.name), `</a></td>`,
+			`<td>`, encodeHtmlEntities(title), `</td>`,
+			`</tr>`
+		);
+		count++;
+	}
+	if (!count)
+		html.put(
+			`<tr><td colspan="2">(no tasks found)</td></tr>`
+		);
+	html.put(
+		`</table>`
+	);
+
+	// TODO: pager
 }
 
 void startWebServer()
