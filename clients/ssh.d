@@ -49,6 +49,7 @@ final class SshClient : Client
 			fStdOut.fdopen(dup(pStdOut[0].handle));
 			fStdErr.fdopen(dup(pStdErr[0].handle));
 			auto fStdIn = File("data/client-bootstrap.sh", "rb");
+			log("Launching command: %s".format(args));
 			pid = spawnProcess(args, fStdIn, fStdOut, fStdErr);
 
 			// just in case these callbacks outlive the job
@@ -80,7 +81,16 @@ final class SshClient : Client
 					(string reason, DisconnectType type)
 					{
 						if (this.done)
+						{
+							// The job has already been completed and its log closed,
+							// but we still need to reap the process if necessary.
+							if (pid)
+							{
+								pid.wait();
+								this.pid = null;
+							}
 							return; // Doesn't matter, already completed
+						}
 
 						log("Stream %s disconnected (%s) with reason %s".format(messageLogType, type, reason));
 						if (messageLogType == Message.Log.Type.stdout) // Just for one of them
