@@ -180,6 +180,7 @@ struct JobResult
 {
 	JobStatus status; /// success/failure/error/obsoleted
 	string error; /// error message; null if no error
+	// TODO: build cache keys (for doc diffs from local server)
 	// TODO: coverage
 	// TODO: metrics
 }

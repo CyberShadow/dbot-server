@@ -38,6 +38,15 @@ struct Config
 	}
 	Client[string] clients; // key is client ID
 
+	struct Web
+	{
+		string addr;
+		ushort port = 80;
+	}
+	Web web;
+
+	string localCache; // Location of the cache for the "local" remote
+
 	string githubToken;
 }
 
@@ -83,6 +92,7 @@ enum JobStatus
 	started,   /// A client is working on this right now
 	orphaned,  /// The server was killed/restarted while this job was still running
 	obsoleted, /// Job killed because a newer version of this PR has been pushed
+	tempfail,  /// Job failed, but we should retry it
 	success,   /// Job completed, all is well
 	failure,   /// Job completed, something is not well
 	error,     /// Job failed due to something that should not normally happen

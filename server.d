@@ -7,16 +7,16 @@ import clients;
 
 import scheduler.common;
 import scheduler.github;
+import web.server;
 
 void main()
 {
 	log("Starting up");
 
-	// TODO: Start web server
+	startWebServer();
 
 	initializeScheduler();
 	initializeGitHub();
-	// TODO: Grab initial GitHub data (pulls to test)
 
 	startClients();
 

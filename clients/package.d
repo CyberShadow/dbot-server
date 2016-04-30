@@ -13,14 +13,16 @@ import scheduler.common;
 
 class Client
 {
+	Config.Client clientConfig;
+	string id;
+
+	Job* job;
+
 	this(string id, Config.Client clientConfig)
 	{
 		this.id = id;
 		this.clientConfig = clientConfig;
 	}
-
-
-	Job* job;
 
 	final void run()
 	{
@@ -47,9 +49,6 @@ class Client
 	}
 
 protected:
-	Config.Client clientConfig;
-	string id;
-
 	/// DMD version used to build the client
 	static const dmdVer = "2.071.0";
 
