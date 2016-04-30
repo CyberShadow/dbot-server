@@ -87,7 +87,7 @@ final class SshClient : Client
 						{
 							log("Reaping process %d...".format(pid.processID));
 							auto status = pid.wait();
-							this.pid = Pid.init;
+							this.pid = null;
 							log("Reaped with status %d.".format(status));
 							if (!job.done)
 							{
@@ -116,11 +116,12 @@ final class SshClient : Client
 		{
 			log("Aborting (%s) - killing process %d".format(reason, pid.processID));
 			abortReason = reason;
-			if (cStdOut.state != ConnectionState.disconnected)
+			if (cStdOut && cStdOut.state != ConnectionState.disconnected)
 				cStdOut.disconnect();
-			if (cStdErr.state != ConnectionState.disconnected)
+			if (cStdErr && cStdErr.state != ConnectionState.disconnected)
 				cStdErr.disconnect();
-			pid.kill();
+			if (pid) // Usually the process will be reaped by the disconnect handlers
+				pid.kill();
 		}
 	}
 
