@@ -11,6 +11,7 @@ import std.range;
 import std.stdio;
 import std.string;
 
+import ae.net.shutdown;
 import ae.utils.json;
 import ae.utils.meta : enumLength;
 import ae.utils.text : arrayFromHex, toHex;
@@ -194,6 +195,9 @@ string jobDir(long id)
 /// or null if there is no more work for this client.
 Job* getJob(string clientID)
 {
+	if (shuttingDown)
+		return null;
+
 	auto task = (){
 		auto taskSources = taskSourceFactories.map!(f => f(clientID)).array();
 
@@ -389,7 +393,7 @@ void handleTask(Task task, Action action)
 	}
 	foreach (client; allClients)
 		if (client.job && task.obsoletes(client.job, action))
-			client.abortJob();
+			client.abortJob("Obsoleted by %s".format(task.jobKey));
 	prodClients();
 
 	if (action != Action.remove)
@@ -400,9 +404,13 @@ void handleTask(Task task, Action action)
 	}
 }
 
+private bool shuttingDown = false;
+
 void initializeScheduler()
 {
 	assert(!allClients.length, "Scheduler initialization should occur before client initialization");
 
 	query("UPDATE [Jobs] SET [Status]='orphaned' WHERE [Status]='started'").exec();
+
+	addShutdownHandler({ shuttingDown = true; });
 }

@@ -13,10 +13,10 @@ void main()
 {
 	log("Starting up");
 
-	startWebServer();
-
 	initializeScheduler();
 	initializeGitHub();
+
+	startWebServer();
 
 	startClients();
 

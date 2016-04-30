@@ -60,3 +60,5 @@ cd "$CLIENT_DIR"
 }
 
 _ "$@"
+
+exit

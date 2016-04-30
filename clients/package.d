@@ -3,6 +3,7 @@ module clients;
 import std.datetime;
 import std.string;
 
+import ae.net.shutdown;
 import ae.utils.json;
 
 import dbot.protocol;
@@ -10,6 +11,8 @@ import dbot.protocol;
 import clients.ssh;
 import common;
 import scheduler.common;
+
+// TODO: time-outs
 
 class Client
 {
@@ -43,7 +46,7 @@ class Client
 	/// Abort the currently running job, if possible.
 	/// If aborted, client becomes idle. Prod if necessary.
 	/// The partial job result should still be reported via jobComplete.
-	void abortJob()
+	void abortJob(string reason)
 	{
 		// TODO: accept a reason parameter
 	}
@@ -164,6 +167,15 @@ void startClients()
 		allClients[id] = client;
 		client.run();
 	}
+
+	addShutdownHandler({ stopClients("DBot server shutting down"); });
+}
+
+void stopClients(string reason)
+{
+	foreach (id, client; allClients)
+		if (client.job)
+			client.abortJob(reason);
 }
 
 void prodClients()

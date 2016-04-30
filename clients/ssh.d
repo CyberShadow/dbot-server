@@ -1,5 +1,7 @@
 module clients.ssh;
 
+import core.sys.posix.unistd : dup;
+
 import std.algorithm.searching;
 import std.process;
 
@@ -19,6 +21,9 @@ class SshClient : Client
 {
 	mixin GenerateContructorProxies;
 
+	Pid pid;
+	string abortReason;
+
 	final void launch(string[] args)
 	{
 		import std.socket;
@@ -28,15 +33,15 @@ class SshClient : Client
 		auto pStdErr = socketPair();
 
 		File fStdOut, fStdErr;
-		fStdOut.fdopen(pStdOut[0].handle);
-		fStdErr.fdopen(pStdErr[0].handle);
+		fStdOut.fdopen(dup(pStdOut[0].handle));
+		fStdErr.fdopen(dup(pStdErr[0].handle));
 		auto fStdIn = File("data/client-bootstrap.sh", "rb");
 		auto pid = spawnProcess(args, fStdIn, fStdOut, fStdErr);
+		this.pid = pid;
 
 		// just in case these callbacks outlive the job
 		auto job = this.job;
-
-		// TODO: time-outs
+		abortReason = null;
 
 		void wrapSocket(Socket socket, Message.Log.Type messageLogType)
 		{
@@ -75,10 +80,19 @@ class SshClient : Client
 					{
 						if (!job.done)
 						{
-							this.result.status = JobStatus.error;
-							this.result.error = "Unexpected disconnect (" ~ reason ~ ")";
+							if (abortReason)
+							{
+								this.result.status = JobStatus.aborted;
+								this.result.error = abortReason;
+							}
+							else
+							{
+								this.result.status = JobStatus.error;
+								this.result.error = "Unexpected disconnect (" ~ reason ~ ")";
+							}
 							reportResult(job);
 						}
+						pid.wait();
 					};
 		}
 
@@ -92,5 +106,12 @@ class SshClient : Client
 		cmdLine ~= bootstrapArgs;
 		cmdLine ~= job.task.spec.commandLine;
 		launch(cmdLine);
+	}
+
+	override void abortJob(string reason)
+	{
+		assert(job);
+		abortReason = reason;
+		pid.kill(1);
 	}
 }

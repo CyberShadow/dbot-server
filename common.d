@@ -90,6 +90,7 @@ bool isInMetaRepository(string org, string repo)
 enum JobStatus
 {
 	started,   /// A client is working on this right now
+	aborted,   /// Explicitly aborted due to one reason or another (see error field)
 	orphaned,  /// The server was killed/restarted while this job was still running
 	obsoleted, /// Job killed because a newer version of this PR has been pushed
 	tempfail,  /// Job failed, but we should retry it

@@ -11,6 +11,7 @@ import ae.net.http.client;
 import ae.net.http.common;
 import ae.net.ietf.url;
 import ae.sys.file;
+import ae.sys.timing;
 import ae.utils.digest;
 import ae.utils.json;
 
@@ -40,7 +41,10 @@ void httpQuery(string url, void delegate(string) handleData, void delegate(strin
 			request.headers["If-Modified-Since"] = cacheEntry.lastModified;
 
 		debug (offline)
-			return handleData(cacheEntry.data);
+		{
+			setTimeout(handleData, Duration.zero, cacheEntry.data);
+			return;
+		}
 	}
 
 	log("Getting URL " ~ url);
