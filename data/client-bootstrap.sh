@@ -55,7 +55,7 @@ fi
 
 RDMD_PATH=$(realpath "$RDMD_PATH")
 cd "$CLIENT_DIR"
-"$RDMD_PATH" client.d "$@"
+"$RDMD_PATH" -g client.d "$@"
 
 }
 
