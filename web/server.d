@@ -353,6 +353,7 @@ void showTextLog(JobID id)
 
 void showTasks()
 {
+	// TODO: Browseable hierarchy
 	taskTable(fullPageSize, Yes.pager);
 }
 
@@ -532,10 +533,10 @@ void showPager(int pageCount)
 			`<div class="pager-left">`,
 				linkOrNot("&laquo; First", 0, page!=0),
 				`&nbsp;&nbsp;&nbsp;`,
-				linkOrNot("&lsaquo; Prev", page-1, page>1),
+				linkOrNot("&lsaquo; Prev", page-1, page>0),
 			`</div>`
 			`<div class="pager-right">`,
-				linkOrNot("Next &rsaquo;", page+1, page<pageCount),
+				linkOrNot("Next &rsaquo;", page+1, page<pageCount-1),
 				`&nbsp;&nbsp;&nbsp;`,
 				linkOrNot("Last &raquo; ", pageCount-1, page!=pageCount-1),
 			`</div>`
