@@ -66,6 +66,8 @@ final class SshClient : Client
 				lbuf.handleReadData =
 					(Data data)
 					{
+						if (done)
+							return; // Doesn't matter, already completed
 						auto str = cast(string)data.toHeap();
 						debug scope(failure) log("Error with line: " ~ str);
 						if (str.skipOver("dbot-client: "))
