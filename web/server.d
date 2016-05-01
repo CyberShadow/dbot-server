@@ -280,7 +280,7 @@ void showJob(JobID id)
 		html.put(
 			`<table class="horiz">`
 			`<tr><th>ID</th><td>`, id.text, `</td></tr>`
-			`<tr><th>Client</th><td><a href="/client/`, clientID, `">`, clientID, `</a></td></tr>`,
+			`<tr><th>Client</th><td><a href="/worker/`, clientID, `">`, clientID, `</a></td></tr>`,
 			`<tr><th>Start time</th><td>`, SysTime(startTime, UTC()).formatTime!timeFormat, `</td></tr>`
 			`<tr><th>Finish time</th><td>`, finishTime ? SysTime(finishTime, UTC()).formatTime!timeFormat : "(still running)", `</td></tr>`,
 			`<tr><th>Status</th><td>`, status, `</td></tr>`,
@@ -406,7 +406,7 @@ void jobTable(Args...)(int limit, Flag!"pager" pager, string where = null, Args 
 			`<td><a href="/job/`, text(jobID), `">`, text(jobID), `</a></td>`,
 			`<td>`, SysTime(startTime, UTC()).formatTime!timeFormat, `</td>`,
 			`<td>`, finishTime ? SysTime(finishTime, UTC()).formatTime!timeFormat : "-", `</td>`,
-			`<td><a href="/client/`, clientID, `">`, clientID, `</a></td>`,
+			`<td><a href="/worker/`, clientID, `">`, clientID, `</a></td>`,
 			`<td>`, status, `</td>`, // TODO: explanation in title attribute
 			`</tr>`
 		);
