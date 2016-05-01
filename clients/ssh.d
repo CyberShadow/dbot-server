@@ -99,9 +99,15 @@ final class SshClient : Client
 						log("Stream %s disconnected (%s) with reason %s".format(messageLogType, type, reason));
 						if (messageLogType == Message.Log.Type.stdout) // Just for one of them
 						{
-							log("Reaping process %d...".format(pid.processID));
-							auto status = reap();
-							log("Reaped with status %d.".format(status));
+							if (pid)
+							{
+								log("Reaping process %d...".format(pid.processID));
+								auto status = reap();
+								log("Reaped with status %d.".format(status));
+							}
+							else
+								log("Already reaped.");
+
 							if (!job.done)
 							{
 								if (abortReason)
@@ -125,11 +131,15 @@ final class SshClient : Client
 			cStdErr = wrapSocket(pStdErr[1], Message.Log.Type.stderr);
 
 			pid = spawnProcess(args, fStdIn, fStdOut, fStdErr);
+			log("Launched with pid %d".format(pid.processID));
 		}
 
 		override void abort(string reason)
 		{
-			log("Aborting (%s) - killing process %d".format(reason, pid.processID));
+			if (pid)
+				log("Aborting (%s) - killing process %d".format(reason, pid.processID));
+			else
+				log("Aborting (%s) - no process".format(reason));
 			if (!abortReason)
 				abortReason = reason;
 			kill();
@@ -163,11 +173,12 @@ final class SshClient : Client
 		{
 			if (this.pid)
 			{
+				auto processID = pid.processID;
 				auto result = pid.tryWait();
 				if (result.terminated)
 				{
 					this.pid = null;
-					abort("Received SIGCHLD, reaped with status %d".format(result.status));
+					abort("Received SIGCHLD, reaped PID %d with status %d".format(processID, result.status));
 				}
 			}
 		}
